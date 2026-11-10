@@ -44,8 +44,25 @@ export const ERROR_MESSAGES = {
   tooManyAnnotations: `Too many annotations (max ${MAX_ANNOTATIONS_PER_FEEDBACK})`,
   valueTooLong: "A value is too long for this server's database",
   deletionAborted: "Deletion aborted: a linked resource could not be cleaned up",
+  tooManyRequests: "Too many requests",
   internalServerError: "Internal server error",
 } as const;
+
+/**
+ * The in-memory rate-limit store sweeps its expired counters once every this
+ * many increments, so keys seen once do not pile up.
+ */
+export const MEMORY_RATE_LIMIT_SWEEP_EVERY = 1_000;
+
+/**
+ * Without `SitepingStore.getFeedback`, `notifyReporter` finds the feedback a
+ * team reply answers among its project's newest feedbacks: at most this many
+ * pages of `REPORTER_LOOKUP_PAGE_SIZE`.
+ */
+export const REPORTER_LOOKUP_MAX_PAGES = 10;
+
+/** Page size of that lookup (the store contract's maximum). */
+export const REPORTER_LOOKUP_PAGE_SIZE = 100;
 
 /** Query parameters the list endpoint reads (everything else is ignored). */
 export const LIST_QUERY_KEYS = [

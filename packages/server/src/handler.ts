@@ -19,6 +19,7 @@ import type {
   SitepingPrincipal,
 } from "./options.js";
 import { createPipeline, type Pipeline, type Scope } from "./pipeline.js";
+import { createRateLimiter } from "./rate-limit.js";
 import { checkWebhookConfigs, subscribesTo, type WebhookConfig } from "./webhooks.js";
 
 const consoleLogger: Pick<SitepingLogger, "error"> = {
@@ -71,10 +72,12 @@ function routeByBody<Principal>(
  * API (`Request` → `Response`): one handler per method, to mount in Next.js
  * route handlers, Hono, Remix, SvelteKit, Bun, Deno or edge workers.
  *
- * **Rate limiting** is not handled by this library. Apply rate limiting at the
- * framework or reverse-proxy level (e.g. Next.js middleware, Nginx, Cloudflare).
- * The POST endpoint in particular should be rate-limited to prevent abuse, since
- * the widget typically calls it from unauthenticated browser contexts.
+ * **Rate limiting** is off by default: apply it at the framework or
+ * reverse-proxy level (e.g. Next.js middleware, Nginx, Cloudflare), or opt
+ * into the built-in limiter with `rateLimit` (per client key, fixed or
+ * sliding window, in memory or in a shared store). The POST endpoint in
+ * particular should be rate-limited to prevent abuse, since the widget
+ * typically calls it from unauthenticated browser contexts.
  *
  * Access is either the built-in `apiKey` policy or your own `access` policy
  * (sessions, JWTs, roles…) — see `SitepingAccessHandlerOptions`.
@@ -118,6 +121,8 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     beforeComment,
     presentFeedback,
     hooks = {},
+    notifyReporter,
+    rateLimit,
     logger: customLogger,
     describeError,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
@@ -168,44 +173,63 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
         "implementing `addCommentIfAbsent`, which tells a new reply from a retried one.",
     );
   }
+  // The same fail-closed rule for reporter notifications of replies.
+  if (notifyReporter && store.addComment && !store.addCommentIfAbsent) {
+    throw new SitepingConfigError(
+      "CONFIG_NOTIFY_REPORTER_UNSUPPORTED",
+      "[siteping] createSitepingHandler: `notifyReporter` needs a store with threads to implement `addCommentIfAbsent`, " +
+        "which tells a new reply from a retried one.",
+    );
+  }
   const notify = createNotifier(webhookList, waitUntil, pipeline);
+  const limit = createRateLimiter(rateLimit, allowedOrigins, logger);
 
   return {
     OPTIONS: (request: Request): Response => preflightResponse(request, allowedOrigins),
-    POST: routeByBody(
-      pipeline,
+    POST: limit(
       "POST",
-      "feedbackId",
-      createCommentOperation({
-        store,
+      routeByBody(
         pipeline,
-        notify,
-        beforeComment,
-        onCommentCreated: hooks.onCommentCreated?.bind(hooks),
-      }),
-      createFeedbackOperation({
-        store,
-        pipeline,
-        notify,
-        beforeCreate,
-        // Bound so hooks written as class methods keep their `this`.
-        onCreated: hooks.onCreated?.bind(hooks),
-      }),
+        "POST",
+        "feedbackId",
+        createCommentOperation({
+          store,
+          pipeline,
+          notify,
+          beforeComment,
+          onCommentCreated: hooks.onCommentCreated?.bind(hooks),
+          notifyReporter,
+        }),
+        createFeedbackOperation({
+          store,
+          pipeline,
+          notify,
+          beforeCreate,
+          // Bound so hooks written as class methods keep their `this`.
+          onCreated: hooks.onCreated?.bind(hooks),
+        }),
+      ),
     ),
-    GET: listFeedbacksOperation({ store, pipeline }),
-    PATCH: updateFeedbackOperation({ store, pipeline, notify, onUpdated: hooks.onUpdated?.bind(hooks) }),
-    DELETE: routeByBody(
-      pipeline,
+    GET: limit("GET", listFeedbacksOperation({ store, pipeline })),
+    PATCH: limit(
+      "PATCH",
+      updateFeedbackOperation({ store, pipeline, notify, onUpdated: hooks.onUpdated?.bind(hooks), notifyReporter }),
+    ),
+    DELETE: limit(
       "DELETE",
-      "commentId",
-      deleteCommentOperation({ store, pipeline }),
-      deleteFeedbackOperation({
-        store,
+      routeByBody(
         pipeline,
-        notify,
-        onDeleting: hooks.onDeleting?.bind(hooks),
-        onDeleted: hooks.onDeleted?.bind(hooks),
-      }),
+        "DELETE",
+        "commentId",
+        deleteCommentOperation({ store, pipeline }),
+        deleteFeedbackOperation({
+          store,
+          pipeline,
+          notify,
+          onDeleting: hooks.onDeleting?.bind(hooks),
+          onDeleted: hooks.onDeleted?.bind(hooks),
+        }),
+      ),
     ),
   };
 }

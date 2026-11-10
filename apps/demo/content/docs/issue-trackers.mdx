@@ -1,15 +1,15 @@
 ---
 title: Issue trackers
-description: One GitHub or GitLab issue per feedback, opened, closed and reopened along with it through the server's lifecycle hooks.
+description: One GitHub, GitLab, Linear, Jira or Plane issue per feedback, opened, closed and reopened along with it through the server's lifecycle hooks — and back, through tracker webhooks.
 ---
 
-`@siteping/integration-issues` builds the [lifecycle hooks](/docs/server#extension-points) of `@siteping/server` so that every feedback gets its own issue on GitHub or GitLab:
+`@siteping/integration-issues` builds the [lifecycle hooks](/docs/server#extension-points) of `@siteping/server` so that every feedback gets its own issue on GitHub, GitLab, Linear, Jira or Plane:
 
 - **created** → an issue opens, labelled `siteping`, with the message, the page, a deep link, the annotated elements, the reviewer's environment and diagnostics;
 - **resolved** or **won't fix** → the issue closes; **reopened** → it reopens;
 - **deleted** → the issue closes with a comment. If the tracker is unreachable, the delete is refused and can be retried.
 
-No database column is added: the first line of each issue is a hidden marker naming its feedback.
+No database column is added: the first line of each issue is a marker naming its feedback. And with a [webhook](#two-way-sync), closing or reopening the issue on GitHub, Linear, Jira or Plane updates the feedback too.
 
 ```bash
 npm i @siteping/integration-issues
@@ -55,6 +55,54 @@ createIssueTrackerHooks({
 
 On a self-managed instance, pass `apiBaseUrl: "https://gitlab.acme.com/api/v4"`.
 
+## Linear
+
+```ts
+import { createLinearTracker } from "@siteping/integration-issues/linear";
+
+createIssueTrackerHooks({
+  tracker: createLinearTracker({ teamId: process.env.LINEAR_TEAM_ID!, token: process.env.LINEAR_API_KEY! }),
+  siteUrl: "https://acme.com",
+});
+```
+
+`teamId` is the id (a UUID) of the team issues go to. The token is a personal API key (**Settings → Security & access → Personal API keys**), sent as is in `Authorization`; for an OAuth access token, add `tokenType: "oauth"`, which sends it as `Bearer`. Issues are created through Linear's GraphQL API with the Markdown description, and the `siteping` label (plus your `labels`) is looked up by name, case-insensitively, among the team's and the workspace's labels, and created in the team when missing.
+
+## Jira
+
+```ts
+import { createJiraTracker } from "@siteping/integration-issues/jira";
+
+createIssueTrackerHooks({
+  tracker: createJiraTracker({
+    siteUrl: "https://acme.atlassian.net",
+    projectKey: "WEB",
+    email: "bot@acme.com",
+    apiToken: process.env.JIRA_API_TOKEN!,
+  }),
+  siteUrl: "https://acme.com",
+});
+```
+
+Jira Cloud, REST API v3, with an [API token](https://id.atlassian.com/manage-profile/security/api-tokens) of the account `email` (basic auth). The account needs to create, edit, transition and comment on issues of `projectKey`. Issues are of type `Task` unless you pass `issueType`, and the labels field must be on the project's create screen. The body goes as Atlassian Document Format: headings, code blocks, lists, code and links, everything a visitor typed as plain text. Jira labels cannot hold spaces, so `needs triage` becomes `needs-triage`, and a description is cut at a section boundary past 30,000 characters (Jira refuses more than 32,767) with a note saying so.
+
+## Plane
+
+```ts
+import { createPlaneTracker } from "@siteping/integration-issues/plane";
+
+createIssueTrackerHooks({
+  tracker: createPlaneTracker({
+    workspaceSlug: "acme",
+    projectId: process.env.PLANE_PROJECT_ID!,
+    apiKey: process.env.PLANE_API_KEY!,
+  }),
+  siteUrl: "https://acme.com",
+});
+```
+
+Plane's REST API v1 (work items, labels, states), with a personal access token sent as `X-API-Key`. The body goes as HTML, every value escaped. Every request carries a `User-Agent`, which Plane requires: some runtimes' `fetch` (Cloudflare Workers, for one) send none. On a self-hosted instance, pass `apiBaseUrl: "https://plane.acme.com"`; issue links then point to that origin, or to `appBaseUrl` when the web app is served elsewhere.
+
 ## Status mapping
 
 | Feedback | GitHub issue | GitLab issue |
@@ -64,9 +112,19 @@ On a self-managed instance, pass `apiBaseUrl: "https://gitlab.acme.com/api/v4"`.
 | `wont_fix` | Closed as not planned | Closed |
 | Deleted | Closed as not planned if still open, with a comment. An issue already closed keeps its reason | Closed, with a comment |
 
+| Feedback | Linear issue | Jira issue | Plane work item |
+|---|---|---|---|
+| `open` | First state of type *unstarted* (Todo) | First transition into the *To Do* category | First state of the *unstarted* group |
+| `in_progress` (from a closed issue) | First *started* state | First transition into *In Progress* | First *started* state |
+| `resolved` | First *completed* state (Done) | First transition into *Done* | First *completed* state |
+| `wont_fix` | First *canceled* state | A transition into *Done* named like "Won't Do", else the first into *Done* | First *cancelled* state |
+| Deleted | As `wont_fix`, with a comment | As `wont_fix`, with a comment | As `wont_fix`, with a comment |
+
+"First" goes by the state's position in the workflow. Name the ones to use with the `states` option (Linear, Plane: `{ resolved: "Shipped" }`) or `transitions` (Jira: transition names), matched case-insensitively. When a Jira issue has no transition into the category asked for and is already in it, nothing is done; otherwise the hook fails and names the missing transition.
+
 Moving between `open` and `in_progress` only looks the issue up, and writes nothing to an issue that is open. With `syncStatus: false`, issues are only created and closed on delete.
 
-The sync runs one way, from SitePing to the tracker: closing the issue on GitHub does not resolve the feedback.
+These hooks sync from SitePing to the tracker. For the other way, set up a [webhook](#two-way-sync).
 
 ## What an issue contains
 
@@ -111,7 +169,7 @@ Everything in the body comes from anonymous visitors, so it is quoted as code. T
 | `syncStatus` | `boolean` | `true` | Close and reopen the issue when the status changes |
 | `deletedCommentText` | `(feedbackId) => string` | ``SitePing feedback `<id>` was deleted.`` | The comment left on the issue of a deleted feedback. A retried delete finds it by a hidden first line, so the text may change from one call to the next |
 
-`createGitHubTracker` and `createGitLabTracker` also take `apiBaseUrl`, `fetch` (for a proxy or tests), `timeoutMs` (per request, default `5000`) and `maxListedPages` (default `10`, see [how issues are found again](#how-issues-are-found-again)).
+`createGitHubTracker` and `createGitLabTracker` also take `apiBaseUrl`, `fetch` (for a proxy or tests), `timeoutMs` (per request, default `5000`) and `maxListedPages` (default `10`, see [how issues are found again](#how-issues-are-found-again)). So do `createLinearTracker` and `createPlaneTracker`, and `createJiraTracker` but `apiBaseUrl`, which is its `siteUrl`.
 
 Both check their options when they are called, and throw on a value that could not work: a `repository` that is not `owner/name` (a `project` that is neither an id nor a full path), an `apiBaseUrl` that is not an absolute http(s) URL or that carries credentials, a `timeoutMs` or `maxListedPages` that is not a positive integer (`Number()` of a misspelled variable is `NaN`), a `timeoutMs` over 2,147,483,647 (about 24 days, the longest delay a timer holds), or a token that is empty or has a space, a line break or an invisible character inside. The error never quotes the token, nor a refused `repository`, `project` or `apiBaseUrl`, which can carry one, as a clone URL does.
 
@@ -165,7 +223,7 @@ The built-in trackers throw two errors that a custom `logger` can tell apart: `I
 
 ## How issues are found again
 
-Each body starts with the marker `<!-- siteping-feedback {"id":"…","project":"…"} -->`, which GitHub and GitLab do not display. Only that first line is read, so feedback text that imitates it is ignored. Edit the rest of the issue as you like, but keep that line first. The deletion comment starts the same way, with `<!-- siteping-feedback-deleted -->`: a retried delete looks for that line, not for the comment's text. Any comment that starts with it counts, whoever wrote it: on a public repository, anyone can post one to keep the deletion comment off an issue, which is still closed.
+Each body starts with the marker `<!-- siteping-feedback {"id":"…","project":"…"} -->`, which GitHub and GitLab do not display. Linear, Jira and Plane would drop an HTML comment, so there the marker is the description's first paragraph, set as code: it shows, and the tracker keeps it as typed. Only that first line is read, so feedback text that imitates it is ignored. Edit the rest of the issue as you like, but keep that line first. The deletion comment starts the same way, with `<!-- siteping-feedback-deleted -->`: a retried delete looks for that line, not for the comment's text. Any comment that starts with it counts, whoever wrote it: on a public repository, anyone can post one to keep the deletion comment off an issue, which is still closed.
 
 Deployments that share a repository and a project name (staging and production, or a preview that copied the production `.env`) would find each other's issues, and a project delete on staging would close production's. Give each its own `instance`: the marker then ends with `"instance":"staging"`, and the hooks only touch issues opened under the same name, an unnamed deployment only those without one. Issues opened before a deployment was named, or renamed, keep the old name.
 
@@ -177,13 +235,13 @@ Only labelled issues count. On GitHub and GitLab, an outsider cannot label an is
 
 ## Other trackers
 
-Implement `IssueTracker` for Jira, Linear or an internal tool. The hooks keep everything that does not depend on the tracker: the format, the marker, and making deletion comments idempotent.
+Implement `IssueTracker` for another tracker or an internal tool. The hooks keep everything that does not depend on the tracker: the format, the marker, and making deletion comments idempotent.
 
 ```ts
 import type { IssueTracker } from "@siteping/integration-issues";
 
 const tracker: IssueTracker = {
-  name: "Linear", // named in the hooks' own errors
+  name: "Acme Tracker", // named in the hooks' own errors
   // Store `body` exactly as given: its first line is the marker.
   async createIssue({ title, body, labels }) {
     return { key: "ENG-42", url: "https://linear.app/acme/issue/ENG-42" };
@@ -213,4 +271,47 @@ Throw when a call fails, and the [failure rules](#latency-and-failures) above ap
 
 Without `searchSitepingIssues`, nothing settles a lookup past the newest page: every status change or delete whose issue is not there lists up to your cap, and once the tracker holds more SitePing issues than that, one whose issue is not listed is refused. That includes a feedback that never got an issue, which then cannot be deleted. Provide a search whenever the tracker has one.
 
-Syncing the other way, so that closing an issue resolves its feedback, needs a tracker webhook handler and is not built yet ([#318](https://github.com/NeosiaNexus/SitePing/issues/318)).
+To sync statuses back from your own tracker, implement the optional `getIssue(key)` too, returning the issue as it is now with `closedAs` (`resolved` or `wont_fix`) when the tracker says why it closed, and build a handler like the built-in ones below.
+
+## Two-way sync
+
+Each tracker entry but GitLab's also exports a webhook handler: a Fetch API function (`Request` → `Response`) that checks the delivery's signature and, when a SitePing issue is closed or reopened on the tracker, changes its feedback's status in your store. Mount it on a route of its own:
+
+```ts
+// app/api/siteping/github/route.ts
+import { createGitHubWebhookHandler } from "@siteping/integration-issues/github";
+import { store } from "@/lib/siteping-store";
+
+export const POST = createGitHubWebhookHandler({
+  repository: "acme/site",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  store,
+});
+```
+
+```ts
+// Linear, Jira and Plane read each delivery's issue back through the tracker:
+import { createLinearTracker, createLinearWebhookHandler } from "@siteping/integration-issues/linear";
+
+const tracker = createLinearTracker({ teamId: process.env.LINEAR_TEAM_ID!, token: process.env.LINEAR_API_KEY! });
+
+export const POST = createLinearWebhookHandler({ tracker, secret: process.env.LINEAR_WEBHOOK_SECRET!, store });
+```
+
+| Tracker | Handler | Set up on the tracker | Signature checked |
+|---|---|---|---|
+| GitHub | `createGitHubWebhookHandler({ repository, secret, store })` | Repository **Settings → Webhooks**, content type `application/json`, a secret, the **Issues** event | `X-Hub-Signature-256` (`sha256=` HMAC of the body) |
+| Linear | `createLinearWebhookHandler({ tracker, secret, store })` | **Settings → API → Webhooks**, the **Issues** data change events | `Linear-Signature` (hex HMAC-SHA256), and `webhookTimestamp` within `toleranceMs` (60 s) |
+| Jira | `createJiraWebhookHandler({ tracker, secret, store })` | **System → WebHooks** (admin), event *Issue updated*, a secret | `X-Hub-Signature` (`sha256=` HMAC) |
+| Plane | `createPlaneWebhookHandler({ tracker, secret, store })` | Workspace **Settings → Webhooks**, work item events | `X-Plane-Signature` (hex HMAC-SHA256) |
+
+A delivery is applied in four steps, and answered with a `200` saying `{ result: "updated", status }` or `{ result: "ignored", reason }`:
+
+1. **Signature.** Checked on the raw body before anything else, in constant time; a bad or missing one answers `401` and nothing is read or asked. A body past `maxBodyBytes` (5 MiB) answers `413`.
+2. **The issue.** Only a state change counts: GitHub's `closed` and `reopened`, a Linear update whose `updatedFrom` holds `stateId`, a Jira update whose changelog touches `status` or `resolution`, a Plane update of the work item's `state`. GitHub's delivery carries the issue, which must be in `repository` and labelled `siteping`, a label outsiders cannot set. Linear, Jira and Plane deliveries are only used for the issue's id: the issue is read again through `tracker` (`getIssue`), so a stale or reordered delivery applies the current state, and an issue without the `siteping` label, or outside the tracker's own team (Linear), project (Jira, Plane) or repository (GitHub), is ignored, whatever marker it carries.
+3. **The link.** The feedback is the one the marker on the issue's first line names, and only when `verifyProjectOwnership` confirms it belongs to the marker's project, and the marker's instance is the handler's `instance`. A marker anywhere else in the body is visitor text and is ignored.
+4. **The status.** A closed issue resolves the feedback, as `wont_fix` when the tracker says it was not planned (GitHub's *not planned*, a canceled Linear state, a cancelled Plane state, a Jira resolution such as *Won't Do*, see `wontFixPattern`); a reopened one sets it back to `open`. With a store implementing `getFeedback` ([memory](/docs/adapters/memory) does), the current status is read first and a feedback that already agrees is left alone: an `in_progress` feedback stays so when its issue reopens, and a `wont_fix` one when its Jira issue is plain *Done*. That is also what stops the echo, as the hooks' own close or reopen comes back through the webhook. Without `getFeedback`, each change is applied: a reopen sets `open` over `in_progress`, and a close stamps `resolvedAt` again.
+
+The store write is `store.updateFeedback`, outside the HTTP handler: its hooks, webhooks and `notifyReporter` do not run. Pass `onStatusSynced(feedback, { tracker, issue, previousStatus, status })` to react, with the same function as the server's [`notifyReporter`](/docs/server#notifying-the-reporter) for instance; a throw there is logged and the delivery still answers `200`. A store that fails answers `500`, and the tracker retries. `instance`, `logger` and `maxBodyBytes` work as elsewhere.
+
+Jira Automation rules cannot sign a request. To use one ("Send web request"), add a header holding the secret and name it with `secretHeader: "X-Automation-Secret"`: such a delivery is then accepted without a signature. Anyone who reads that header once, in a proxy's logs say, can forge deliveries until you change the secret, which a signature prevents: prefer an admin webhook.

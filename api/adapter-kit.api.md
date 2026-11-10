@@ -132,7 +132,7 @@ export const CONSOLE_DIAGNOSTIC_LEVELS: readonly [
 
 export type ClosedFeedbackStatus = (typeof CLOSED_FEEDBACK_STATUSES)[number];
 
-export type CollectionStore = SitepingStore & Required<Pick<SitepingStore, "verifyProjectOwnership">>;
+export type CollectionStore = SitepingStore & Required<Pick<SitepingStore, "getFeedback" | "verifyProjectOwnership">>;
 
 export interface CollectionStoreBackend {
     comments?: boolean | undefined;
@@ -398,6 +398,7 @@ export interface SitepingStore {
     deleteComment?(feedbackId: string, commentId: string): Promise<void>;
     deleteFeedback(id: string): Promise<void>;
     findByClientId(clientId: string): Promise<FeedbackRecord | null>;
+    getFeedback?(id: string): Promise<FeedbackRecord | null>;
     getFeedbacks(query: FeedbackQuery): Promise<FeedbackPage>;
     updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord>;
     verifyProjectOwnership(id: string, projectName: string): Promise<boolean>;

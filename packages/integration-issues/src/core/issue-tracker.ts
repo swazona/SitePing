@@ -1,4 +1,4 @@
-import type { FeedbackStatus } from "@siteping/core";
+import type { ClosedFeedbackStatus, FeedbackStatus } from "@siteping/core";
 
 /** An issue on the tracker. `key` is the provider's own identifier (GitHub number, GitLab iid). */
 export interface IssueReference {
@@ -18,6 +18,13 @@ export interface TrackedIssue {
   reference: IssueReference;
   body: string;
   isOpen: boolean;
+  /**
+   * For a closed issue, the feedback status its close reason maps to, when
+   * the tracker has close reasons: `wont_fix` for GitHub's "not planned", a
+   * canceled Linear or Plane state, a Jira resolution like "Won't Do".
+   * Webhooks read it; absent, a closed issue counts as `resolved`.
+   */
+  closedAs?: ClosedFeedbackStatus | undefined;
 }
 
 /** What `findSitepingIssues` or `searchSitepingIssues` listed. */
@@ -36,8 +43,8 @@ export interface IssueListing {
  * pagination and how feedback statuses map to its own issue states; the
  * hooks own everything provider-agnostic (format, linking, idempotency).
  *
- * Implement it to plug trackers beyond the built-in GitHub and GitLab
- * entries (Jira, Linear, an internal tool…).
+ * Implement it to plug trackers beyond the built-in GitHub, GitLab, Linear,
+ * Jira and Plane entries (an internal tool, another SaaS…).
  */
 export interface IssueTracker {
   /** Human-readable provider name, used in error messages. */
@@ -71,4 +78,14 @@ export interface IssueTracker {
    * do not settle lists up to the provider's cap, and is refused past it.
    */
   searchSitepingIssues?(feedbackId: string): Promise<IssueListing>;
+  /**
+   * Optional — the issue with `key` as it is now, or `null` when it does not
+   * exist or is no SitePing issue (it lacks the `siteping` label). Tracker
+   * webhooks read the current state through it rather than trusting the
+   * delivery, which may be stale, out of order, or lack the issue's body.
+   */
+  getIssue?(key: string): Promise<TrackedIssue | null>;
 }
+
+/** An `IssueTracker` that can read one issue — what the Linear, Jira and Plane webhooks need. */
+export type ReadableIssueTracker = IssueTracker & Required<Pick<IssueTracker, "getIssue">>;

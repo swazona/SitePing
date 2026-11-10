@@ -1,11 +1,14 @@
 import type {
+  ClosedFeedbackStatus,
   CommentPayload,
   CommentRecord,
   FeedbackCreateInput,
   FeedbackRecord,
+  OpenFeedbackStatus,
   SitepingLogger,
   SitepingStore,
 } from "@siteping/core";
+import type { SitepingRateLimitOptions } from "./rate-limit.js";
 import type { WebhookConfig } from "./webhooks.js";
 
 /** HTTP methods served by `createSitepingHandler`. */
@@ -150,6 +153,19 @@ export interface SitepingLifecycleHooks<Principal> {
   onCommentCreated?(comment: SitepingCreatedComment, context: SitepingRequestContext<Principal>): void | Promise<void>;
 }
 
+/**
+ * What `notifyReporter` tells the person who sent a feedback about:
+ *
+ * - `resolved`: the feedback was closed, as `resolved` or `wont_fix`;
+ * - `reopened`: a closed feedback was opened again (`open` or `in_progress`);
+ * - `replied`: the team answered on its thread — a comment stored with the
+ *   `team` role, never the reporter's own.
+ */
+export type SitepingReporterEvent =
+  | { type: "resolved"; status: ClosedFeedbackStatus }
+  | { type: "reopened"; status: OpenFeedbackStatus }
+  | { type: "replied"; comment: SitepingCreatedComment };
+
 /** Options shared by both access policies. */
 export interface SitepingHandlerBaseOptions<Principal> {
   /** Persistence backend — any `SitepingStore` (Prisma, Drizzle, memory, your own). */
@@ -225,6 +241,40 @@ export interface SitepingHandlerBaseOptions<Principal> {
   presentFeedback?(feedback: FeedbackRecord, context: SitepingRequestContext<Principal>): FeedbackRecord;
   /** Lifecycle side effects — see `SitepingLifecycleHooks`. */
   hooks?: SitepingLifecycleHooks<Principal>;
+  /**
+   * Tell the reporter of a feedback what happened to it — send them an
+   * email, a push, a chat message: the library sends nothing itself. Called
+   * with the stored feedback (`authorEmail` included, which may be empty) on
+   * a status change that closes or reopens it, and on each new `team` reply.
+   *
+   * With a store implementing `getFeedback`, a PATCH reads the status first
+   * and only a change that crosses between open and closed (or changes the
+   * close reason) notifies. Without it, every PATCH to `resolved` or
+   * `wont_fix` notifies `resolved`, every PATCH to `open` notifies
+   * `reopened`, and one to `in_progress` notifies nothing. A reply's
+   * feedback is read with `getFeedback`, else found among the project's
+   * 1,000 newest.
+   *
+   * Awaited before the response like the hooks, after them; a throw is
+   * logged and never fails the request. Hand slow work to `waitUntil`
+   * yourself. A store with threads must implement `addCommentIfAbsent`,
+   * which tells a new reply from a retried one (the handler refuses to start
+   * without it). Status changes synced from a tracker by
+   * `@siteping/integration-issues` webhooks do not go through the handler:
+   * pass the same function to their `onStatusSynced`.
+   */
+  notifyReporter?(
+    feedback: FeedbackRecord,
+    event: SitepingReporterEvent,
+    context: SitepingRequestContext<Principal>,
+  ): void | Promise<void>;
+  /**
+   * Opt-in rate limiting per client, with separate limits for `POST` and
+   * for the other methods; a request over its limit answers `429` with
+   * `Retry-After`. Off by default: without it, apply rate limiting in your
+   * framework or reverse proxy. See `SitepingRateLimitOptions`.
+   */
+  rateLimit?: SitepingRateLimitOptions | undefined;
   /**
    * Where unexpected failures are reported, through `error` — the one level
    * the handler uses, so `{ error }` alone is enough. Defaults to

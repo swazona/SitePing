@@ -96,6 +96,10 @@ export class MemoryStore implements SitepingStore {
     return this.engine.verifyProjectOwnership(id, projectName);
   }
 
+  getFeedback(id: string): Promise<FeedbackRecord | null> {
+    return this.engine.getFeedback(id);
+  }
+
   addComment(feedbackId: string, data: CommentCreateInput): Promise<CommentRecord> {
     return this.engine.addComment(feedbackId, data);
   }

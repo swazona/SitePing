@@ -1,15 +1,15 @@
 ---
 title: Gestionnaires de tickets
-description: Un ticket GitHub ou GitLab par feedback, ouvert, fermé et rouvert avec lui par les hooks de cycle de vie du serveur.
+description: Un ticket GitHub, GitLab, Linear, Jira ou Plane par feedback, ouvert, fermé et rouvert avec lui par les hooks de cycle de vie du serveur — et en retour, par les webhooks du gestionnaire.
 ---
 
-`@siteping/integration-issues` construit les [hooks de cycle de vie](/fr/docs/server#points-dextension) de `@siteping/server` pour que chaque feedback ait son propre ticket sur GitHub ou GitLab :
+`@siteping/integration-issues` construit les [hooks de cycle de vie](/fr/docs/server#points-dextension) de `@siteping/server` pour que chaque feedback ait son propre ticket sur GitHub, GitLab, Linear, Jira ou Plane :
 
 - **créé** → un ticket s'ouvre, avec le label `siteping`, le message, la page, un lien direct, les éléments annotés, l'environnement du relecteur et les diagnostics ;
 - **résolu** ou **ne sera pas corrigé** → le ticket se ferme ; **rouvert** → il se rouvre ;
 - **supprimé** → le ticket se ferme avec un commentaire. Si le gestionnaire est injoignable, la suppression est refusée et peut être rejouée.
 
-Aucune colonne n'est ajoutée à la base : la première ligne de chaque ticket est un marqueur caché qui nomme son feedback.
+Aucune colonne n'est ajoutée à la base : la première ligne de chaque ticket est un marqueur qui nomme son feedback. Et avec un [webhook](#synchronisation-dans-les-deux-sens), fermer ou rouvrir le ticket sur GitHub, Linear, Jira ou Plane met aussi le feedback à jour.
 
 ```bash
 npm i @siteping/integration-issues
@@ -55,6 +55,54 @@ createIssueTrackerHooks({
 
 Sur une instance auto-hébergée, passez `apiBaseUrl: "https://gitlab.acme.com/api/v4"`.
 
+## Linear
+
+```ts
+import { createLinearTracker } from "@siteping/integration-issues/linear";
+
+createIssueTrackerHooks({
+  tracker: createLinearTracker({ teamId: process.env.LINEAR_TEAM_ID!, token: process.env.LINEAR_API_KEY! }),
+  siteUrl: "https://acme.com",
+});
+```
+
+`teamId` est l'id (un UUID) de l'équipe qui reçoit les tickets. Le jeton est une clé d'API personnelle (**Settings → Security & access → Personal API keys**), envoyée telle quelle dans `Authorization` ; pour un jeton d'accès OAuth, ajoutez `tokenType: "oauth"`, qui l'envoie en `Bearer`. Les tickets sont créés par l'API GraphQL de Linear avec la description en Markdown, et le label `siteping` (plus vos `labels`) est cherché par son nom, sans tenir compte de la casse, parmi les labels de l'équipe et de l'espace de travail, et créé dans l'équipe s'il manque.
+
+## Jira
+
+```ts
+import { createJiraTracker } from "@siteping/integration-issues/jira";
+
+createIssueTrackerHooks({
+  tracker: createJiraTracker({
+    siteUrl: "https://acme.atlassian.net",
+    projectKey: "WEB",
+    email: "bot@acme.com",
+    apiToken: process.env.JIRA_API_TOKEN!,
+  }),
+  siteUrl: "https://acme.com",
+});
+```
+
+Jira Cloud, API REST v3, avec un [jeton d'API](https://id.atlassian.com/manage-profile/security/api-tokens) du compte `email` (authentification basique). Le compte doit pouvoir créer, modifier, faire transiter et commenter les tickets de `projectKey`. Les tickets sont de type `Task` sauf si vous passez `issueType`, et le champ des labels doit figurer sur l'écran de création du projet. Le corps part en Atlassian Document Format : titres, blocs de code, listes, code et liens, tout ce qu'a tapé un visiteur en texte brut. Les labels Jira ne peuvent pas contenir d'espace : `needs triage` devient `needs-triage`. Une description est coupée à une limite de section au-delà de 30 000 caractères (Jira en refuse plus de 32 767), avec une note qui le dit.
+
+## Plane
+
+```ts
+import { createPlaneTracker } from "@siteping/integration-issues/plane";
+
+createIssueTrackerHooks({
+  tracker: createPlaneTracker({
+    workspaceSlug: "acme",
+    projectId: process.env.PLANE_PROJECT_ID!,
+    apiKey: process.env.PLANE_API_KEY!,
+  }),
+  siteUrl: "https://acme.com",
+});
+```
+
+L'API REST v1 de Plane (work items, labels, états), avec un jeton d'accès personnel envoyé en `X-API-Key`. Le corps part en HTML, chaque valeur échappée. Chaque requête porte un `User-Agent`, que Plane exige : le `fetch` de certains runtimes (Cloudflare Workers, par exemple) n'en envoie pas. Sur une instance auto-hébergée, passez `apiBaseUrl: "https://plane.acme.com"` ; les liens des tickets pointent alors vers cette origine, ou vers `appBaseUrl` quand l'application web est servie ailleurs.
+
 ## Correspondance des statuts
 
 | Feedback | Ticket GitHub | Ticket GitLab |
@@ -64,9 +112,19 @@ Sur une instance auto-hébergée, passez `apiBaseUrl: "https://gitlab.acme.com/a
 | `wont_fix` | Fermé comme non prévu (not planned) | Fermé |
 | Supprimé | Fermé comme non prévu s'il est encore ouvert, avec un commentaire. Un ticket déjà fermé garde sa raison | Fermé, avec un commentaire |
 
+| Feedback | Ticket Linear | Ticket Jira | Work item Plane |
+|---|---|---|---|
+| `open` | Premier état de type *unstarted* (Todo) | Première transition vers la catégorie *To Do* | Premier état du groupe *unstarted* |
+| `in_progress` (depuis un ticket fermé) | Premier état *started* | Première transition vers *In Progress* | Premier état *started* |
+| `resolved` | Premier état *completed* (Done) | Première transition vers *Done* | Premier état *completed* |
+| `wont_fix` | Premier état *canceled* | Une transition vers *Done* nommée comme « Won't Do », sinon la première vers *Done* | Premier état *cancelled* |
+| Supprimé | Comme `wont_fix`, avec un commentaire | Comme `wont_fix`, avec un commentaire | Comme `wont_fix`, avec un commentaire |
+
+« Premier » suit la position de l'état dans le workflow. Nommez ceux à utiliser avec l'option `states` (Linear, Plane : `{ resolved: "Shipped" }`) ou `transitions` (Jira : noms de transitions), comparés sans tenir compte de la casse. Quand un ticket Jira n'a aucune transition vers la catégorie demandée et s'y trouve déjà, rien n'est fait ; sinon le hook échoue en nommant la transition manquante.
+
 Passer de `open` à `in_progress` et inversement ne fait que chercher le ticket, et n'écrit rien sur un ticket ouvert. Avec `syncStatus: false`, les tickets sont seulement créés, puis fermés à la suppression.
 
-La synchronisation va dans un seul sens, de SitePing vers le gestionnaire : fermer le ticket sur GitHub ne résout pas le feedback.
+Ces hooks synchronisent de SitePing vers le gestionnaire. Pour l'autre sens, configurez un [webhook](#synchronisation-dans-les-deux-sens).
 
 ## Ce que contient un ticket
 
@@ -111,7 +169,7 @@ Tout le corps vient de visiteurs anonymes, il est donc cité comme du code. Le l
 | `syncStatus` | `boolean` | `true` | Ferme et rouvre le ticket quand le statut change |
 | `deletedCommentText` | `(feedbackId) => string` | ``SitePing feedback `<id>` was deleted.`` | Le commentaire laissé sur le ticket d'un feedback supprimé. Une suppression rejouée le retrouve par une première ligne cachée : le texte peut donc changer d'un appel à l'autre |
 
-`createGitHubTracker` et `createGitLabTracker` prennent aussi `apiBaseUrl`, `fetch` (pour un proxy ou des tests), `timeoutMs` (par requête, `5000` par défaut) et `maxListedPages` (`10` par défaut, voir [comment les tickets sont retrouvés](#comment-les-tickets-sont-retrouvés)).
+`createGitHubTracker` et `createGitLabTracker` prennent aussi `apiBaseUrl`, `fetch` (pour un proxy ou des tests), `timeoutMs` (par requête, `5000` par défaut) et `maxListedPages` (`10` par défaut, voir [comment les tickets sont retrouvés](#comment-les-tickets-sont-retrouvés)). `createLinearTracker` et `createPlaneTracker` aussi, et `createJiraTracker` sauf `apiBaseUrl`, qui est son `siteUrl`.
 
 Tous deux vérifient leurs options à l'appel, et lèvent une erreur sur une valeur qui ne pourrait pas marcher : un `repository` qui n'est pas `owner/name` (un `project` qui n'est ni un identifiant ni un chemin complet), un `apiBaseUrl` qui n'est pas une URL http(s) absolue ou qui contient des identifiants, un `timeoutMs` ou un `maxListedPages` qui n'est pas un entier positif (`Number()` d'une variable mal orthographiée vaut `NaN`), un `timeoutMs` au-delà de 2 147 483 647 (environ 24 jours, le plus long délai qu'un minuteur accepte), ou un jeton vide ou qui contient une espace, un saut de ligne ou un caractère invisible. L'erreur ne cite jamais le jeton, ni un `repository`, un `project` ou un `apiBaseUrl` refusé, qui peut en contenir un, comme une URL de clonage.
 
@@ -165,7 +223,7 @@ Les gestionnaires intégrés lèvent deux erreurs qu'un `logger` personnalisé p
 
 ## Comment les tickets sont retrouvés
 
-Chaque corps commence par le marqueur `<!-- siteping-feedback {"id":"…","project":"…"} -->`, que GitHub et GitLab n'affichent pas. Seule cette première ligne est lue, donc un texte de feedback qui l'imite est ignoré. Modifiez le reste du ticket comme vous voulez, mais gardez cette ligne en tête. Le commentaire de suppression commence de la même façon, par `<!-- siteping-feedback-deleted -->` : une suppression rejouée cherche cette ligne, pas le texte du commentaire. Tout commentaire qui commence par elle compte, quel qu'en soit l'auteur : sur un dépôt public, n'importe qui peut en poster un pour priver un ticket du commentaire de suppression, ticket qui est tout de même fermé.
+Chaque corps commence par le marqueur `<!-- siteping-feedback {"id":"…","project":"…"} -->`, que GitHub et GitLab n'affichent pas. Linear, Jira et Plane supprimeraient un commentaire HTML : chez eux, le marqueur est le premier paragraphe de la description, en code. Il s'affiche, et le gestionnaire le garde tel quel. Seule cette première ligne est lue, donc un texte de feedback qui l'imite est ignoré. Modifiez le reste du ticket comme vous voulez, mais gardez cette ligne en tête. Le commentaire de suppression commence de la même façon, par `<!-- siteping-feedback-deleted -->` : une suppression rejouée cherche cette ligne, pas le texte du commentaire. Tout commentaire qui commence par elle compte, quel qu'en soit l'auteur : sur un dépôt public, n'importe qui peut en poster un pour priver un ticket du commentaire de suppression, ticket qui est tout de même fermé.
 
 Des déploiements qui partagent un dépôt et un nom de projet (la recette et la production, ou une préversion qui a copié le `.env` de production) trouveraient les tickets les uns des autres, et la suppression d'un projet en recette fermerait ceux de la production. Donnez à chacun son `instance` : le marqueur se termine alors par `"instance":"staging"`, et les hooks ne touchent qu'aux tickets ouverts sous le même nom, un déploiement sans nom qu'à ceux qui n'en ont pas. Les tickets ouverts avant qu'un déploiement soit nommé, ou renommé, gardent l'ancien nom.
 
@@ -177,13 +235,13 @@ Seuls les tickets avec le label comptent. Sur GitHub et GitLab, une personne ext
 
 ## Autres gestionnaires
 
-Implémentez `IssueTracker` pour Jira, Linear ou un outil interne. Les hooks gardent tout ce qui ne dépend pas du gestionnaire : le format, le marqueur, et des commentaires de suppression qui ne se répètent pas.
+Implémentez `IssueTracker` pour un autre gestionnaire ou un outil interne. Les hooks gardent tout ce qui ne dépend pas du gestionnaire : le format, le marqueur, et des commentaires de suppression qui ne se répètent pas.
 
 ```ts
 import type { IssueTracker } from "@siteping/integration-issues";
 
 const tracker: IssueTracker = {
-  name: "Linear", // cité dans les erreurs des hooks
+  name: "Acme Tracker", // cité dans les erreurs des hooks
   // Stockez `body` tel quel : sa première ligne est le marqueur.
   async createIssue({ title, body, labels }) {
     return { key: "ENG-42", url: "https://linear.app/acme/issue/ENG-42" };
@@ -214,4 +272,47 @@ Levez une exception quand un appel échoue, et les [règles d'échec](#latence-e
 
 Sans `searchSitepingIssues`, rien ne tranche une recherche de ticket au-delà de la première page : chaque changement de statut ou suppression dont le ticket n'y est pas liste jusqu'à votre limite, et dès que le gestionnaire compte plus de tickets SitePing que cela, celle dont le ticket n'est pas listé est refusée. Cela inclut un feedback qui n'a jamais eu de ticket, qui ne peut alors plus être supprimé. Fournissez une recherche dès que le gestionnaire en a une.
 
-Synchroniser dans l'autre sens, pour que fermer un ticket résolve son feedback, demande un handler de webhooks du gestionnaire et n'existe pas encore ([#318](https://github.com/NeosiaNexus/SitePing/issues/318)).
+Pour synchroniser les statuts depuis votre propre gestionnaire, implémentez aussi l'optionnelle `getIssue(key)`, qui renvoie le ticket tel qu'il est avec `closedAs` (`resolved` ou `wont_fix`) quand le gestionnaire dit pourquoi il est fermé, et construisez un handler comme ceux fournis ci-dessous.
+
+## Synchronisation dans les deux sens
+
+Chaque entrée de gestionnaire sauf celle de GitLab exporte aussi un handler de webhooks : une fonction de l'API Fetch (`Request` → `Response`) qui vérifie la signature de l'envoi et, quand un ticket SitePing est fermé ou rouvert dans le gestionnaire, change le statut de son feedback dans votre store. Montez-le sur une route à lui :
+
+```ts
+// app/api/siteping/github/route.ts
+import { createGitHubWebhookHandler } from "@siteping/integration-issues/github";
+import { store } from "@/lib/siteping-store";
+
+export const POST = createGitHubWebhookHandler({
+  repository: "acme/site",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  store,
+});
+```
+
+```ts
+// Linear, Jira et Plane relisent le ticket de chaque envoi par le gestionnaire :
+import { createLinearTracker, createLinearWebhookHandler } from "@siteping/integration-issues/linear";
+
+const tracker = createLinearTracker({ teamId: process.env.LINEAR_TEAM_ID!, token: process.env.LINEAR_API_KEY! });
+
+export const POST = createLinearWebhookHandler({ tracker, secret: process.env.LINEAR_WEBHOOK_SECRET!, store });
+```
+
+| Gestionnaire | Handler | À configurer côté gestionnaire | Signature vérifiée |
+|---|---|---|---|
+| GitHub | `createGitHubWebhookHandler({ repository, secret, store })` | **Settings → Webhooks** du dépôt, type de contenu `application/json`, un secret, l'événement **Issues** | `X-Hub-Signature-256` (HMAC `sha256=` du corps) |
+| Linear | `createLinearWebhookHandler({ tracker, secret, store })` | **Settings → API → Webhooks**, les événements de données **Issues** | `Linear-Signature` (HMAC-SHA256 en hexadécimal), et `webhookTimestamp` à moins de `toleranceMs` (60 s) |
+| Jira | `createJiraWebhookHandler({ tracker, secret, store })` | **System → WebHooks** (admin), l'événement *Issue updated*, un secret | `X-Hub-Signature` (HMAC `sha256=`) |
+| Plane | `createPlaneWebhookHandler({ tracker, secret, store })` | **Settings → Webhooks** de l'espace de travail, les événements des work items | `X-Plane-Signature` (HMAC-SHA256 en hexadécimal) |
+
+Un envoi est appliqué en quatre étapes, et reçoit un `200` qui dit `{ result: "updated", status }` ou `{ result: "ignored", reason }` :
+
+1. **La signature.** Vérifiée sur le corps brut avant tout le reste, en temps constant ; une signature fausse ou absente répond `401`, sans rien lire ni rien demander. Un corps au-delà de `maxBodyBytes` (5 Mio) répond `413`.
+2. **Le ticket.** Seul un changement d'état compte : `closed` et `reopened` sur GitHub, une mise à jour Linear dont `updatedFrom` contient `stateId`, une mise à jour Jira dont le changelog touche `status` ou `resolution`, une mise à jour Plane de l'état (`state`) du work item. L'envoi de GitHub porte le ticket, qui doit être dans `repository` et avoir le label `siteping`, qu'aucun extérieur ne peut poser. Des envois Linear, Jira et Plane, seul l'id du ticket sert : le ticket est relu par `tracker` (`getIssue`), donc un envoi périmé ou arrivé dans le désordre applique l'état actuel, et un ticket sans label `siteping`, ou hors de l'équipe (Linear), du projet (Jira, Plane) ou du dépôt (GitHub) du gestionnaire, est ignoré, quel que soit son marqueur.
+3. **Le lien.** Le feedback est celui que nomme le marqueur de la première ligne du ticket, seulement si `verifyProjectOwnership` confirme qu'il appartient au projet du marqueur, et si l'instance du marqueur est l'`instance` du handler. Un marqueur ailleurs dans le corps est du texte de visiteur, ignoré.
+4. **Le statut.** Un ticket fermé résout le feedback, en `wont_fix` quand le gestionnaire dit qu'il n'était pas prévu (*not planned* sur GitHub, un état annulé sur Linear ou Plane, une résolution Jira comme *Won't Do*, voir `wontFixPattern`) ; un ticket rouvert le remet à `open`. Avec un store qui implémente `getFeedback` ([memory](/fr/docs/adapters/memory) le fait), le statut actuel est lu d'abord et un feedback déjà d'accord n'est pas touché : un feedback `in_progress` le reste quand son ticket est rouvert, et un `wont_fix` quand son ticket Jira est simplement *Done*. C'est aussi ce qui arrête l'écho, quand la fermeture ou la réouverture faite par les hooks revient par le webhook. Sans `getFeedback`, chaque changement est appliqué : une réouverture met `open` par-dessus `in_progress`, et une fermeture tamponne à nouveau `resolvedAt`.
+
+L'écriture passe par `store.updateFeedback`, hors du handler HTTP : ses hooks, ses webhooks et `notifyReporter` ne tournent pas. Passez `onStatusSynced(feedback, { tracker, issue, previousStatus, status })` pour réagir, avec la même fonction que le [`notifyReporter`](/fr/docs/server#prévenir-lauteur) du serveur par exemple ; une exception y est journalisée et l'envoi répond tout de même `200`. Un store en échec répond `500`, et le gestionnaire réessaie. `instance`, `logger` et `maxBodyBytes` fonctionnent comme ailleurs.
+
+Les règles Jira Automation ne savent pas signer une requête. Pour en utiliser une (« Send web request »), ajoutez un en-tête qui porte le secret et nommez-le avec `secretHeader: "X-Automation-Secret"` : un tel envoi est alors accepté sans signature. Quiconque lit cet en-tête une fois, dans les journaux d'un proxy par exemple, peut forger des envois jusqu'à ce que vous changiez le secret, ce qu'une signature empêche : préférez un webhook d'administration.

@@ -140,6 +140,10 @@ Implement it whenever your store serves more than one project. When it's absent,
 
 `createFeedbackIfAbsent(data)` is the other optional method: `createFeedback` that also returns whether this call inserted the record — `{ feedback, created }`. The request handlers prefer it over `createFeedback`, and notify webhooks only for `created: true`, so two requests racing on the same `clientId` — the widget retrying a request that timed out, landing on another server instance — notify once. Without it the handlers fall back to `createFeedback` and recover its `StoreDuplicateError` with a lookup, so it's optional; it saves a refused insert on every replay. The dedup check and the insert must be atomic: of concurrent calls with the same `clientId`, exactly one reports `created: true`, and all return that record. `createCollectionStore` guarantees it within one store instance by queueing its writes; storage shared by several processes (or browser tabs) needs an atomic primitive of its own — a unique constraint, a transaction, a compare-and-set.
 
+## Reading one feedback
+
+`getFeedback(id)`, optional, returns the record with that id, its thread included, or `null` when there is none. Nothing requires it, but two features read through it when it is there: the server's [`notifyReporter`](/docs/server#notifying-the-reporter), which reads the status before a PATCH (so it notifies real changes only) and the feedback a team reply answers, and the [tracker webhooks](/docs/issue-trackers#two-way-sync), which read a feedback's status before syncing it. `createCollectionStore` implements it; the conformance suite checks it when it is present.
+
 ## Discussion threads
 
 `addComment(feedbackId, data)` and `deleteComment(feedbackId, commentId)` are optional too. Without them your store has no threads: your records can leave `comments` out, the handler serves every feedback with an empty thread and answers comment writes with `501`. Implement both to support [threads](/docs/comments):

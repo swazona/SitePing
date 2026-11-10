@@ -170,11 +170,11 @@ export interface CollectionStoreBackend {
 }
 
 /**
- * A `SitepingStore` with the optional `verifyProjectOwnership` guaranteed —
+ * A `SitepingStore` with the optional `verifyProjectOwnership` and `getFeedback` guaranteed —
  * what `createCollectionStore` returns, which also guarantees
  * `createFeedbackIfAbsent`.
  */
-export type CollectionStore = SitepingStore & Required<Pick<SitepingStore, "verifyProjectOwnership">>;
+export type CollectionStore = SitepingStore & Required<Pick<SitepingStore, "verifyProjectOwnership" | "getFeedback">>;
 
 /**
  * Build a fully conformant `SitepingStore` on top of a snapshot backend.
@@ -303,6 +303,10 @@ export function createCollectionStore(
 
     async findByClientId(clientId: string): Promise<FeedbackRecord | null> {
       return (await backend.load()).find((f) => f.clientId === clientId) ?? null;
+    },
+
+    async getFeedback(id: string): Promise<FeedbackRecord | null> {
+      return (await backend.load()).find((f) => f.id === id) ?? null;
     },
 
     updateFeedback: (id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord> =>

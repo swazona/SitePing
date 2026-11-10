@@ -3,8 +3,10 @@ import {
   GITHUB_ACCEPT_HEADER,
   GITHUB_API_BASE_URL,
   GITHUB_API_VERSION,
+  GITHUB_EVENT_HEADER,
   GITHUB_PAGE_SIZE,
   GITHUB_REPOSITORY_PATTERN,
+  GITHUB_SIGNATURE_HEADER,
   GITHUB_STATE_REASON,
   GITHUB_USER_AGENT,
 } from "../constants/github.js";
@@ -13,6 +15,7 @@ import { SITEPING_ISSUE_LABEL } from "../constants/issue-format.js";
 import { createJsonHttpClient, UnlabelledIssueError } from "../core/http-client.js";
 import type { IssueTracker, TrackedIssue } from "../core/issue-tracker.js";
 import { checkApiBaseUrl, checkPositiveInteger, checkTimeout, checkToken } from "../core/tracker-options.js";
+import { asRecord, createWebhookHandler, type IssueWebhookOptions, verifyHexSignature } from "../core/webhook.js";
 
 export interface GitHubTrackerOptions {
   /** `owner/name` of the repository issues are created in. */
@@ -169,4 +172,73 @@ export function createGitHubTracker({
   };
 }
 
+export interface GitHubWebhookOptions extends IssueWebhookOptions {
+  /** `owner/name` of the repository the issues live in: deliveries about any other are ignored. */
+  repository: string;
+}
+
+/** Labels of a webhook issue, lowercased. */
+const labelNames = (labels: unknown): string[] =>
+  Array.isArray(labels)
+    ? labels.flatMap((label) => {
+        const name = typeof label === "string" ? label : asRecord(label).name;
+        return typeof name === "string" ? [name.toLowerCase()] : [];
+      })
+    : [];
+
+/**
+ * Two-way sync from GitHub: a Fetch API handler for a repository webhook on
+ * the **Issues** event, with a secret. It checks the `X-Hub-Signature-256`
+ * HMAC, and when a SitePing issue (labelled `siteping`, which outsiders
+ * cannot set) is closed or reopened, moves its feedback to `resolved`
+ * (closed as completed), `wont_fix` (closed as not planned) or back to
+ * `open`. Other events (`ping` included) are acknowledged and ignored.
+ */
+export function createGitHubWebhookHandler({
+  repository,
+  ...options
+}: GitHubWebhookOptions): (request: Request) => Promise<Response> {
+  if (!GITHUB_REPOSITORY_PATTERN.test(repository)) {
+    throw new Error('[siteping] createGitHubWebhookHandler: repository must be "owner/name"');
+  }
+  const { secret } = options;
+  return createWebhookHandler(
+    {
+      tracker: "GitHub",
+      factory: "createGitHubWebhookHandler",
+      async verify(request, body) {
+        const signature = request.headers.get(GITHUB_SIGNATURE_HEADER);
+        if (!signature?.startsWith("sha256=")) return false;
+        return verifyHexSignature(secret, body, signature.slice("sha256=".length));
+      },
+      async issueOf(payload, request) {
+        if (request.headers.get(GITHUB_EVENT_HEADER) !== "issues") return null;
+        const { action, issue: rawIssue, repository: rawRepository } = asRecord(payload);
+        if (action !== "closed" && action !== "reopened") return null;
+        const fullName = asRecord(rawRepository).full_name;
+        if (typeof fullName !== "string" || fullName.toLowerCase() !== repository.toLowerCase()) return null;
+        const issue = asRecord(rawIssue);
+        if (issue.pull_request !== undefined || !labelNames(issue.labels).includes(SITEPING_ISSUE_LABEL)) return null;
+        const { number, html_url: url, body, state, state_reason: reason } = issue;
+        if (typeof number !== "number" || typeof url !== "string") return null;
+        const isOpen = state === "open";
+        return {
+          reference: { key: String(number), url },
+          body: typeof body === "string" ? body : "",
+          isOpen,
+          ...(isOpen
+            ? {}
+            : reason === GITHUB_STATE_REASON.notPlanned
+              ? { closedAs: "wont_fix" as const }
+              : reason === GITHUB_STATE_REASON.completed
+                ? { closedAs: "resolved" as const }
+                : {}),
+        };
+      },
+    },
+    options,
+  );
+}
+
 export type { IssueReference, IssueTracker } from "../core/issue-tracker.js";
+export type { IssueStatusSync, IssueWebhookOptions, IssueWebhookStore } from "../core/webhook.js";

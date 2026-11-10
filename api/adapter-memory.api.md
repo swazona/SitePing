@@ -33,6 +33,7 @@ export class MemoryStore implements SitepingStore {
     private readonly engine;
     private feedbacks;
     findByClientId(clientId: string): Promise<FeedbackRecord | null>;
+    getFeedback(id: string): Promise<FeedbackRecord | null>;
     getFeedbacks(query: FeedbackQuery): Promise<FeedbackPage>;
     private idCounter;
     updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord>;
@@ -48,6 +49,7 @@ export interface SitepingStore {
     deleteComment?(feedbackId: string, commentId: string): Promise<void>;
     deleteFeedback(id: string): Promise<void>;
     findByClientId(clientId: string): Promise<FeedbackRecord | null>;
+    getFeedback?(id: string): Promise<FeedbackRecord | null>;
     getFeedbacks(query: FeedbackQuery): Promise<FeedbackPage>;
     updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord>;
     verifyProjectOwnership(id: string, projectName: string): Promise<boolean>;

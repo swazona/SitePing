@@ -9,6 +9,7 @@ import { ERROR_MESSAGES } from "../constants.js";
 import type { Notify } from "../notify.js";
 import type { SitepingCreatedComment, SitepingHandlerBaseOptions, SitepingLifecycleHooks } from "../options.js";
 import type { Pipeline, Scope } from "../pipeline.js";
+import { findFeedback } from "../reporter.js";
 import { commentCreateSchema } from "../validation.js";
 
 interface CreateCommentDependencies<Principal> {
@@ -17,6 +18,7 @@ interface CreateCommentDependencies<Principal> {
   notify: Notify<Principal>;
   beforeComment: SitepingHandlerBaseOptions<Principal>["beforeComment"];
   onCommentCreated: SitepingLifecycleHooks<Principal>["onCommentCreated"];
+  notifyReporter: SitepingHandlerBaseOptions<Principal>["notifyReporter"];
 }
 
 /** `POST` with a `feedbackId` — add a comment to that feedback's thread, idempotent on `clientId`. */
@@ -26,6 +28,7 @@ export function createCommentOperation<Principal>({
   notify,
   beforeComment,
   onCommentCreated,
+  notifyReporter,
 }: CreateCommentDependencies<Principal>) {
   return async (scope: Scope<Principal>, body: unknown): Promise<Response> => {
     const payload = pipeline.validate(scope, commentCreateSchema, body);
@@ -70,6 +73,14 @@ export function createCommentOperation<Principal>({
           await pipeline.runHook(scope, "onCommentCreated", { feedbackId, projectName, commentId: stored.id }, () =>
             onCommentCreated(reply, scope.context),
           );
+        }
+        if (notifyReporter && stored.authorRole === "team") {
+          const subject = { feedbackId, projectName, commentId: stored.id, event: "replied" };
+          await pipeline.runHook(scope, "notifyReporter", subject, async () => {
+            const feedback = await findFeedback(store, feedbackId, projectName);
+            if (!feedback) throw new Error(`[siteping] notifyReporter: feedback ${feedbackId} not found to notify`);
+            await notifyReporter(feedback, { type: "replied", comment: reply }, scope.context);
+          });
         }
       }
       return pipeline.json(scope, await pipeline.presentCreatedComment(scope, stored, projectName), { status: 201 });

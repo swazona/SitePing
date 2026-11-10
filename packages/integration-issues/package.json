@@ -1,7 +1,7 @@
 {
   "name": "@siteping/integration-issues",
   "version": "0.2.0",
-  "description": "Issue tracker integration for Siteping — one issue per feedback on GitHub, GitLab or your own tracker, kept in sync through @siteping/server lifecycle hooks",
+  "description": "Issue tracker integration for Siteping \u2014 one issue per feedback on GitHub, GitLab, Linear, Jira, Plane or your own tracker, kept in sync both ways through @siteping/server lifecycle hooks and tracker webhooks",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -34,6 +34,36 @@
         "types": "./dist/gitlab.d.cts",
         "default": "./dist/gitlab.cjs"
       }
+    },
+    "./linear": {
+      "import": {
+        "types": "./dist/linear.d.ts",
+        "default": "./dist/linear.js"
+      },
+      "require": {
+        "types": "./dist/linear.d.cts",
+        "default": "./dist/linear.cjs"
+      }
+    },
+    "./jira": {
+      "import": {
+        "types": "./dist/jira.d.ts",
+        "default": "./dist/jira.js"
+      },
+      "require": {
+        "types": "./dist/jira.d.cts",
+        "default": "./dist/jira.cjs"
+      }
+    },
+    "./plane": {
+      "import": {
+        "types": "./dist/plane.d.ts",
+        "default": "./dist/plane.js"
+      },
+      "require": {
+        "types": "./dist/plane.d.cts",
+        "default": "./dist/plane.cjs"
+      }
     }
   },
   "main": "./dist/index.cjs",
@@ -52,6 +82,9 @@
     "issues",
     "github",
     "gitlab",
+    "linear",
+    "jira",
+    "plane",
     "integration",
     "feedback",
     "typescript"
