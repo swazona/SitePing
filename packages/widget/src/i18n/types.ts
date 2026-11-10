@@ -60,6 +60,21 @@ export interface Translations {
   "fab.messages": string;
   "fab.annotate": string;
   "fab.annotations": string;
+  /** The flow item while no flow is active / while one is. */
+  "fab.flowStart": string;
+  "fab.flowFinish": string;
+
+  // Multi-page flow strip — every comment sent while a flow is active is its next step
+  "flow.aria": string;
+  "flow.titleLabel": string;
+  "flow.titlePlaceholder": string;
+  "flow.start": string;
+  /** `{title}` is the reviewer's name for the flow, `{step}` the step the next comment records. */
+  "flow.label": string;
+  "flow.labelUntitled": string;
+  "flow.finish": string;
+  /** Announced, and shown as a toast, when the flow ends. */
+  "flow.finished": string;
 
   // Annotator
   "annotator.instruction": string;

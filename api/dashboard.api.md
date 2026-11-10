@@ -79,6 +79,7 @@ export interface FeedbackPermissions {
 }
 
 export interface FeedbackQuery {
+    flowId?: string | undefined;
     limit?: number | undefined;
     page?: number | undefined;
     projectName: string;
@@ -98,6 +99,9 @@ export interface FeedbackRecord {
     comments?: CommentRecord[] | undefined;
     createdAt: Date;
     diagnostics: DiagnosticsSnapshot | null;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     id: string;
     message: string;
     projectName: string;
@@ -312,6 +316,10 @@ export interface Translations {
     "drawer.title": string;
     "drawer.viewport": string;
     "drawer.zoomScreenshot": string;
+    "flow.expanded": string;
+    "flow.kind": string;
+    "flow.steps": string;
+    "flow.untitled": string;
     "hints.help": string;
     "hints.inProgress": string;
     "hints.navigate": string;
@@ -365,7 +373,10 @@ export interface Translations {
     "type.other": string;
     "type.question": string;
     "comments.team": string;
+    "flow.stepLabel": string;
+    "flow.collapsed": string;
     "inbox.resultsCount": string;
+    "flow.step": string;
 }
 
 export type UseSitepingInboxOptions = InboxCustomSourceOptions | InboxEndpointOptions | InboxStoreOptions;
@@ -487,6 +498,9 @@ interface FeedbackCreateInput {
     authorName: string;
     clientId: string;
     diagnostics?: DiagnosticsSnapshot | null | undefined;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     message: string;
     projectName: string;
     screenshotDataUrl?: null | string | undefined;

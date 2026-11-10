@@ -11,7 +11,8 @@
  *   /api/siteping-keyed → the same store behind `apiKey: "e2e-key"`, reads
  *                     and submissions left public: what a visitor and the
  *                     key holder are each allowed to do.
- *   /               → a page running the widget in HTTP mode against it.
+ *   /               → a page running the widget in HTTP mode against it;
+ *                     `/flow/<n>` serves the same page, for a multi-page flow.
  *   /inbox          → `<SitepingInbox />` (dashboard) against the same API,
  *                     bundled with esbuild at startup.
  *   /__e2e/webhook  → generic-webhook receiver; GET /__e2e/webhooks lists
@@ -181,7 +182,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/") {
+    if (url.pathname === "/" || /^\/flow\/\d+$/.test(url.pathname)) {
       res.writeHead(200, { "Content-Type": "text/html" }).end(widgetPage(url.searchParams));
       return;
     }

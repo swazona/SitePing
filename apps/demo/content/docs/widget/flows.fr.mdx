@@ -1,0 +1,33 @@
+---
+title: Parcours sur plusieurs pages
+description: Laisser un relecteur décrire un problème qui traverse plusieurs pages — un commentaire par page, envoyés comme les étapes ordonnées d'un parcours.
+---
+
+Beaucoup de problèmes ne tiennent pas sur une page. « L'inscription est confuse » veut souvent dire : l'étape de l'e-mail en demande trop, le code arrive en retard et la page d'accueil affiche le mauvais nom. Un **parcours** permet au relecteur de le dire ainsi : il démarre un parcours, laisse un commentaire sur chaque page visitée, puis termine. Chaque commentaire reste un retour ordinaire — avec son surlignage, sa capture et son statut — et l'équipe les reçoit reliés, dans l'ordre.
+
+Rien à configurer. Le menu du bouton flottant propose **Démarrer un parcours** dès que le widget sait que l'endpoint garde les parcours : un serveur qui parle le [protocole 2](/fr/docs/server#parcours-sur-plusieurs-pages) (`@siteping/server` et `@siteping/adapter-prisma` depuis la version qui a ajouté les parcours), lu dans sa première réponse de liste, ou n'importe quel [`store`](/fr/docs/widget/configuration). Face à un serveur plus ancien, l'entrée reste masquée : chaque étape y serait stockée comme un retour sans lien.
+
+## Côté relecteur
+
+1. **Démarrer un parcours**, dans le menu, demande un nom — facultatif, 200 caractères au plus. Entrée (ou **Démarrer**) le lance ; Échap ou **Annuler** ne lance rien.
+2. Un bandeau en haut de la page montre le parcours : « Parcours : Inscription · étape 1 », l'étape que le prochain commentaire enregistre, et **Terminer**.
+3. Chaque commentaire envoyé tant que le bandeau est affiché devient l'étape suivante. Il part tout de suite, comme tout commentaire : un onglet fermé en chemin garde les étapes déjà envoyées.
+4. **Terminer** clôt le parcours — tout comme Échap quand le focus est dans le bandeau, ou **Terminer le parcours**, l'intitulé de l'entrée du menu entre-temps. Le commentaire suivant redevient un commentaire ordinaire.
+
+Un parcours compte au plus 100 étapes : il se termine de lui-même après la centième.
+
+## D'une page à l'autre
+
+Le parcours actif vit dans le `sessionStorage` de l'onglet, un par projet et par endpoint. Il survit aux rechargements et aux chargements de page dans le même onglet — suivre un lien, envoyer un formulaire : le bandeau revient à l'étape suivante — et s'arrête avec l'onglet. Quand le stockage est indisponible (certains modes de navigation privée), un parcours dure le temps de la page.
+
+Les applications monopage n'ont rien de plus à faire : chaque étape lit la [portée de page](/fr/docs/widget/configuration) au moment de l'envoi, donc elle porte la page où se trouvait le relecteur, grâce au même suivi des routes qui rafraîchit les marqueurs.
+
+Un commentaire que le serveur n'a pas pu prendre — hors ligne, erreur serveur — est [gardé pour la prochaine visite](/fr/docs/widget#la-fiabilité-sans-rien-faire) comme d'habitude, compte bien pour son étape, et repart avec son parcours. Un commentaire refusé par le serveur — tout autre `4xx` — ne compte pas : le suivant prend son étape.
+
+## Ce qui est envoyé
+
+Chaque étape est un envoi normal avec trois champs de plus — `flowId`, partagé par toutes les étapes, `flowStep`, à partir de 1, et `flowTitle`, `null` sans titre. La [référence du serveur](/fr/docs/server#parcours-sur-plusieurs-pages) les décrit, et `GET ?flowId=…` liste les étapes d'un parcours.
+
+## Accessibilité
+
+Le bandeau est une région nommée (« Parcours sur plusieurs pages ») ; son étape est une région live polie, donc chaque nouvelle étape est lue, et « Parcours terminé » est annoncé à la fin. Chaque contrôle est un bouton ou un champ natif, atteint avec Tab. Le bandeau est centré : il se lit de la même façon sur une page de droite à gauche. Ses textes sont traduits dans chaque [langue intégrée](/fr/docs/widget/i18n) — `fab.flowStart`, `fab.flowFinish` et les clés `flow.*` — et se surchargent avec `registerLocale`.

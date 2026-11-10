@@ -1,0 +1,33 @@
+---
+title: Multi-page flows
+description: Let a reviewer describe one problem across several pages — a comment per page, sent as the ordered steps of one flow.
+---
+
+Many problems aren't on one page. "Sign-up is confusing" usually means the email step asks too much, the code arrives late and the welcome page shows the wrong name. A **flow** lets the reviewer say it that way: they start a flow, leave a comment on each page they visit, and finish. Each comment is an ordinary feedback — its own highlight, screenshot and status — and the team gets them linked, in order.
+
+There is nothing to configure. The floating button's menu offers **Start a flow** once the widget knows the endpoint keeps flows: a server that speaks [protocol 2](/docs/server#multi-page-flows) (`@siteping/server` and `@siteping/adapter-prisma` from the release that added flows), read from its first list response, or any [`store`](/docs/widget/configuration). Against an older server the item stays hidden, as each step would be stored as an unrelated feedback.
+
+## How a reviewer uses it
+
+1. **Start a flow** in the menu asks for a name — optional, up to 200 characters. Enter (or **Start**) starts it; Escape or **Cancel** starts nothing.
+2. A strip at the top of the page shows the flow: "Flow: Sign-up · step 1", the step the next comment records, and **Finish**.
+3. Every comment sent while the strip shows is the next step. It is sent at once, like any comment, so a tab closed halfway keeps the steps already sent.
+4. **Finish** ends the flow — so does Escape while focus is in the strip, or **Finish the flow**, as the menu item reads meanwhile. The next comment is an ordinary one again.
+
+A flow holds at most 100 steps: it finishes by itself after the hundredth.
+
+## Across pages
+
+The active flow lives in the tab's `sessionStorage`, one per project and endpoint. It survives reloads and page loads in the same tab — follow a link, submit a form, the strip comes back at its next step — and ends with the tab. When storage is unavailable (some privacy modes), a flow lasts as long as the page.
+
+Single-page apps need nothing more: each step reads the [page scope](/docs/widget/configuration) when it is sent, so it carries the page the reviewer was on, through the same route watching that refreshes the pins.
+
+A comment the server could not take — offline, a server error — is [saved for the next visit](/docs/widget#reliability-details-you-get-for-free) as usual, still counts as its step, and is resent with its flow. A comment the server refused — any other `4xx` — does not: the next one takes its step.
+
+## What gets sent
+
+Each step is a normal submission with three more fields — `flowId`, shared by every step, `flowStep`, from 1, and `flowTitle`, `null` when untitled. The [server reference](/docs/server#multi-page-flows) describes them, and `GET ?flowId=…` lists one flow's steps.
+
+## Accessibility
+
+The strip is a labelled region ("Multi-page flow"); its step is a polite live region, so each new step is read out, and "Flow finished" is announced when it ends. Every control is a native button or field, reached with Tab. The strip is centered, so it reads the same in right-to-left pages. Its strings are translated in every [built-in locale](/docs/widget/i18n) — `fab.flowStart`, `fab.flowFinish` and the `flow.*` keys — and can be overridden with `registerLocale`.

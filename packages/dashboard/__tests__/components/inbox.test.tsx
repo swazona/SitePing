@@ -804,3 +804,150 @@ describe("SitepingInbox — permissions and readOnly", () => {
     expect(container.querySelector(".spd-danger-zone")).toBeNull();
   });
 });
+
+describe("SitepingInbox — multi-page flows", () => {
+  /** A three-step flow, sent newest last, around two feedbacks outside it. */
+  function flowSeed(): FeedbackRecord[] {
+    const step = (id: string, flowStep: number, minute: number, message: string) =>
+      makeRecord({
+        id,
+        status: "open",
+        message,
+        flowId: "flow-signup",
+        flowStep,
+        flowTitle: "Sign-up",
+        createdAt: new Date(`2026-07-20T10:0${minute}:00Z`),
+      });
+    return [
+      makeRecord({
+        id: "lone",
+        status: "open",
+        message: "Footer link is broken",
+        createdAt: new Date("2026-07-20T10:09:00Z"),
+      }),
+      step("s3", 3, 8, "Welcome page shows the wrong name"),
+      step("s2", 2, 7, "The code arrives late"),
+      step("s1", 1, 6, "The email step asks too much"),
+      makeRecord({
+        id: "old",
+        status: "open",
+        message: "Typo in the FAQ",
+        createdAt: new Date("2026-07-20T10:01:00Z"),
+      }),
+    ];
+  }
+
+  const rowTexts = () => listRows().map((row) => row.querySelector(".spd-row-message")?.textContent);
+
+  it("shows a flow as one row, '<title> · N steps', that expands to its steps in order", async () => {
+    renderInbox({}, flowSeed());
+    await ready();
+    await waitFor(() => expect(rowTexts()).toEqual(["Footer link is broken", "Sign-up · 3 steps", "Typo in the FAQ"]));
+    const flowRow = listRows()[1]!;
+    expect(flowRow.textContent).toContain("Flow");
+    expect(flowRow.textContent).toContain("collapsed");
+
+    fireEvent.click(flowRow);
+    await waitFor(() =>
+      expect(rowTexts()).toEqual([
+        "Footer link is broken",
+        "Sign-up · 3 steps",
+        "The email step asks too much",
+        "The code arrives late",
+        "Welcome page shows the wrong name",
+        "Typo in the FAQ",
+      ]),
+    );
+    expect(listRows()[1]!.textContent).toContain("expanded");
+    expect(
+      listRows()
+        .slice(2, 5)
+        .map((row) => row.querySelector(".spd-row-step-label")?.textContent),
+    ).toEqual(["Step 1", "Step 2", "Step 3"]);
+    // Clicking the flow's row never opens a drawer: it only folds.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(listRows()[1]!);
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+  });
+
+  it("reads 'Untitled flow' and '1 step' for a lone untitled step", async () => {
+    renderInbox({}, [makeRecord({ status: "open", flowId: "f", flowStep: 1, flowTitle: null })]);
+    await ready();
+    await waitFor(() => expect(rowTexts()).toEqual(["Untitled flow · 1 step"]));
+  });
+
+  it("navigates with j/k through what shows; Enter and → / ← fold the flow from the keyboard", async () => {
+    renderInbox({}, flowSeed());
+    const listbox = await ready();
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+    const focusedText = () => listbox.querySelector(".spd-row-focused .spd-row-message")?.textContent ?? null;
+
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "j" });
+    await waitFor(() => expect(focusedText()).toBe("Sign-up · 3 steps"));
+    expect(listbox.getAttribute("aria-activedescendant")).toBe(listRows()[1]!.id);
+
+    fireEvent.keyDown(listbox, { key: "Enter" });
+    await waitFor(() => expect(listRows()).toHaveLength(6));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(listbox, { key: "j" });
+    await waitFor(() => expect(focusedText()).toBe("The email step asks too much"));
+
+    // ← from a step folds its flow and puts focus back on the flow's row.
+    fireEvent.keyDown(listbox, { key: "ArrowLeft" });
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+    expect(focusedText()).toBe("Sign-up · 3 steps");
+    fireEvent.keyDown(listbox, { key: "ArrowRight" });
+    await waitFor(() => expect(listRows()).toHaveLength(6));
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "j" });
+    await waitFor(() => expect(focusedText()).toBe("Typo in the FAQ"));
+  });
+
+  it("keeps each step's own status: resolving one step leaves the others open", async () => {
+    const { source } = renderInbox({}, flowSeed());
+    const listbox = await ready();
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+    fireEvent.click(listRows()[1]!); // expand
+    await waitFor(() => expect(listRows()).toHaveLength(6));
+
+    fireEvent.click(listRows()[3]!); // open step 2
+    await screen.findByRole("dialog", { name: /Feedback details/ });
+    fireEvent.keyDown(listbox, { key: "e" });
+    expect(await screen.findByText("Marked as resolved")).toBeTruthy();
+
+    expect(source.setStatus).toHaveBeenCalledTimes(1);
+    expect(source.setStatus.mock.calls[0]?.[0]).toBe("s2");
+    await waitFor(() => expect(rowTexts()).not.toContain("The code arrives late"));
+    expect(listRows()[1]!.textContent).toContain("Sign-up · 2 steps");
+  });
+
+  it("e on a flow's row changes no status", async () => {
+    const { source } = renderInbox({}, flowSeed());
+    const listbox = await ready();
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "e" });
+    await act(async () => {});
+    expect(source.setStatus).not.toHaveBeenCalled();
+  });
+
+  it("expands a folded flow when focus lands on one of its steps", async () => {
+    renderInbox({}, flowSeed());
+    const listbox = await ready();
+    await waitFor(() => expect(listRows()).toHaveLength(3));
+
+    // Resolving the first row moves focus to the next listed record: a step
+    // of the folded flow. The flow opens, so the focus never points at a hidden row.
+    fireEvent.keyDown(listbox, { key: "j" });
+    fireEvent.keyDown(listbox, { key: "e" });
+    await waitFor(() => expect(rowTexts()).toContain("Welcome page shows the wrong name"));
+    expect(listbox.querySelector(".spd-row-focused .spd-row-message")?.textContent).toBe(
+      "Welcome page shows the wrong name",
+    );
+    expect(document.getElementById(listbox.getAttribute("aria-activedescendant") ?? "")).not.toBeNull();
+  });
+});

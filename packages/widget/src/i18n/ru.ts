@@ -59,6 +59,18 @@ export const ru: Translations = {
   "fab.messages": "Показать панель",
   "fab.annotate": "Создать аннотацию",
   "fab.annotations": "Показать или скрыть метки",
+  "fab.flowStart": "Начать сценарий",
+  "fab.flowFinish": "Завершить сценарий",
+
+  // Multi-page flow strip
+  "flow.aria": "Сценарий на нескольких страницах",
+  "flow.titleLabel": "Название сценария",
+  "flow.titlePlaceholder": "Необязательно, напр. Регистрация",
+  "flow.start": "Начать",
+  "flow.label": "Сценарий: {title} · шаг {step}",
+  "flow.labelUntitled": "Сценарий · шаг {step}",
+  "flow.finish": "Завершить",
+  "flow.finished": "Сценарий завершён",
 
   // Annotator
   "annotator.instruction":

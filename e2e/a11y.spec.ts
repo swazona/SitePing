@@ -60,7 +60,7 @@ async function violations(page: Page, include: string[]): Promise<Finding[]> {
     .filter((finding) => finding.targets.length > 0);
 }
 
-async function seedFeedback(page: Page, project: string): Promise<void> {
+async function seedFeedback(page: Page, project: string, more: Record<string, unknown> = {}): Promise<void> {
   const res = await page.request.post(`${ORIGIN}/api/siteping`, {
     data: {
       projectName: project,
@@ -73,6 +73,7 @@ async function seedFeedback(page: Page, project: string): Promise<void> {
       authorEmail: "axe@example.com",
       clientId: `axe-${project}`,
       annotations: [],
+      ...more,
     },
   });
   expect(res.ok()).toBe(true);
@@ -119,6 +120,20 @@ for (const theme of ["light", "dark"] as const) {
       expect.soft(await violations(page, WIDGET_SURFACES), "comment popup").toEqual([]);
     });
 
+    test("widget: the flow strip, asking a title and while a flow is active", async ({ page, browserName }) => {
+      const project = `axe-flow-strip-${theme}-${browserName}`;
+      await page.goto(`${ORIGIN}/?project=${project}&theme=${theme}`);
+      await page.locator(".sp-fab").click();
+      await page.locator('[data-item-id="flow"]').click();
+      await expect(page.locator(".sp-flow input")).toBeFocused();
+      expect.soft(await violations(page, WIDGET_SURFACES), "flow title form").toEqual([]);
+
+      await page.keyboard.type("Sign-up");
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".sp-flow > .sp-flow-label")).toHaveText("Flow: Sign-up · step 1");
+      expect.soft(await violations(page, WIDGET_SURFACES), "flow strip").toEqual([]);
+    });
+
     test("inbox: list and open feedback", async ({ page, browserName }) => {
       const project = `axe-inbox-${theme}-${browserName}`;
       await seedFeedback(page, project);
@@ -130,6 +145,27 @@ for (const theme of ["light", "dark"] as const) {
       await row.click();
       await expect(page.locator(".spd-drawer")).toBeVisible();
       expect.soft(await violations(page, [".spd-root"]), "open feedback").toEqual([]);
+    });
+
+    test("inbox: a multi-page flow, folded and expanded", async ({ page, browserName }) => {
+      const project = `axe-flow-${theme}-${browserName}`;
+      for (const flowStep of [1, 2]) {
+        await seedFeedback(page, project, {
+          clientId: `axe-${project}-${flowStep}`,
+          message: `Step ${flowStep} of the sign-up`,
+          flowId: `axe-flow-${theme}`,
+          flowStep,
+          flowTitle: "Sign-up",
+        });
+      }
+      await page.goto(`${ORIGIN}/inbox?project=${project}&theme=${theme}`);
+      const flowRow = page.locator(".spd-row-flow");
+      await expect(flowRow).toBeVisible();
+      expect.soft(await violations(page, [".spd-root"]), "folded flow").toEqual([]);
+
+      await flowRow.click();
+      await expect(page.locator(".spd-row-step")).toHaveCount(2);
+      expect.soft(await violations(page, [".spd-root"]), "expanded flow").toEqual([]);
     });
   });
 }

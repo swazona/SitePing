@@ -73,6 +73,15 @@ export const de: Translations = {
   "comments.delete": "Antwort löschen",
   "comments.failed": "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
 
+  // Multi-page flows in the list
+  "flow.kind": "Ablauf",
+  "flow.untitled": "Ablauf ohne Titel",
+  "flow.step": "{count} Schritt",
+  "flow.steps": "{count} Schritte",
+  "flow.stepLabel": "Schritt {step}",
+  "flow.collapsed": "eingeklappt",
+  "flow.expanded": "ausgeklappt",
+
   // Keyboard hints
   "hints.navigate": "navigieren",
   "hints.open": "öffnen",

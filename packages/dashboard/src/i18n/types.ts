@@ -78,6 +78,18 @@ export interface Translations {
   "comments.delete": string;
   "comments.failed": string;
 
+  // Multi-page flows in the list — a flow's row, read before its title
+  "flow.kind": string;
+  "flow.untitled": string;
+  /** `{count}` steps loaded — `flow.step` when there is one. */
+  "flow.step": string;
+  "flow.steps": string;
+  /** Before a step's message, under its expanded flow. */
+  "flow.stepLabel": string;
+  /** Read after a flow's row: whether its steps show. */
+  "flow.collapsed": string;
+  "flow.expanded": string;
+
   // Footer hint bar
   "hints.navigate": string;
   "hints.open": string;

@@ -3,11 +3,11 @@ import { parseSvg, setInert, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import { registerEscapeLayer } from "./host-isolation.js";
 import { type TFunction, type Translations, tWithParams } from "./i18n/index.js";
-import { ICON_CLOSE, ICON_EDIT, ICON_EYE, ICON_EYE_OFF, ICON_LIST, ICON_SITEPING } from "./icons.js";
+import { ICON_CLOSE, ICON_EDIT, ICON_EYE, ICON_EYE_OFF, ICON_FLOW, ICON_LIST, ICON_SITEPING } from "./icons.js";
 import { isCoarsePointer } from "./viewport.js";
 
 /** Closed set of radial menu item ids — keeps the label lookup exhaustive. */
-type RadialItemId = "chat" | "annotate" | "toggle-annotations";
+type RadialItemId = "chat" | "annotate" | "flow" | "toggle-annotations";
 
 interface RadialItem {
   id: RadialItemId;
@@ -25,6 +25,7 @@ const ITEM_GAP_TOUCH = 60;
 const ITEM_LABEL_KEYS: Record<RadialItemId, keyof Translations> = {
   chat: "fab.messages",
   annotate: "fab.annotate",
+  flow: "fab.flowStart",
   "toggle-annotations": "fab.annotations",
 };
 
@@ -42,6 +43,7 @@ export class Fab {
   private badgeEl: HTMLElement | null = null;
   private isOpen = false;
   private annotationsVisible = true;
+  private flowActive = false;
   private items: RadialItem[];
 
   constructor(
@@ -56,6 +58,9 @@ export class Fab {
     // - list  → opens the feedback sidebar (panel of feedbacks).
     // - edit  → creates a new annotation (the action).
     // - eye   → toggles marker visibility on the page (state).
+    // - route → starts a multi-page flow, or finishes the active one. Added
+    //           after the pencil by `setFlowAvailable()`, once the launcher
+    //           knows the endpoint keeps flows.
     // The marker-visibility toggle is opt-out via `config.showAnnotationsToggle`:
     // default `true` preserves historical behavior, `false` removes the item from
     // the menu entirely (no DOM, no keyboard slot, no click handler).
@@ -85,23 +90,7 @@ export class Fab {
     for (let i = 0; i < this.items.length; i++) {
       const item = this.items[i];
       if (!item) continue;
-      const btn = document.createElement("button");
-      btn.className = "sp-radial-item";
-      btn.style.setProperty("--sp-i", String(i));
-      btn.appendChild(parseSvg(item.icon));
-      btn.setAttribute("role", "menuitem");
-      btn.dataset.itemId = item.id;
-
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.handleItemClick(item.id);
-      });
-
-      const label = document.createElement("span");
-      label.className = "sp-radial-label";
-      btn.appendChild(label);
-
-      this.radialContainer.appendChild(btn);
+      this.radialContainer.appendChild(this.createItem(item, i));
     }
 
     // Phone layout: dims the page behind the open speed dial so its labels
@@ -178,6 +167,46 @@ export class Fab {
 
   private onDocumentClick: (e: MouseEvent) => void;
 
+  private createItem(item: RadialItem, index: number): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = "sp-radial-item";
+    btn.style.setProperty("--sp-i", String(index));
+    btn.appendChild(parseSvg(item.icon));
+    btn.setAttribute("role", "menuitem");
+    btn.dataset.itemId = item.id;
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.handleItemClick(item.id);
+    });
+
+    const label = document.createElement("span");
+    label.className = "sp-radial-label";
+    btn.appendChild(label);
+    return btn;
+  }
+
+  /**
+   * Offer the flow item, after the pencil — once the endpoint is known to
+   * keep flows, or while a flow is active. Idempotent.
+   */
+  setFlowAvailable(): void {
+    if (this.items.some((item) => item.id === "flow")) return;
+    const item: RadialItem = { id: "flow", icon: ICON_FLOW };
+    const next = this.radialContainer.querySelector('[data-item-id="toggle-annotations"]');
+    this.radialContainer.insertBefore(this.createItem(item, 2), next);
+    this.items.splice(2, 0, item);
+    if (next instanceof HTMLElement) next.style.setProperty("--sp-i", "3");
+    this.applyLabels();
+    if (this.isOpen) this.layoutOpenItems();
+  }
+
+  /** Label the flow item "Finish the flow" while one is active, "Start a flow" otherwise. */
+  setFlowActive(active: boolean): void {
+    this.flowActive = active;
+    this.applyLabels();
+  }
+
   /**
    * Re-read every `t(...)`-derived label and aria-label from the active
    * translation function. Idempotent — call after the locale dictionary has
@@ -202,7 +231,7 @@ export class Fab {
     for (const btn of buttons) {
       const id = btn.dataset.itemId as RadialItemId | undefined;
       if (!id) continue;
-      const key = ITEM_LABEL_KEYS[id];
+      const key = id === "flow" && this.flowActive ? "fab.flowFinish" : ITEM_LABEL_KEYS[id];
       if (!key) continue;
       const label = this.t(key);
       btn.setAttribute("aria-label", label);
@@ -255,7 +284,16 @@ export class Fab {
     this.fab.setAttribute("aria-expanded", "true");
     this.scrim.classList.add("sp-scrim--open");
     setInert(this.radialContainer, false);
+    this.layoutOpenItems();
 
+    // Focus the first menu item after animation
+    requestAnimationFrame(() => {
+      const firstItem = this.radialContainer.querySelector<HTMLButtonElement>(".sp-radial-item");
+      firstItem?.focus();
+    });
+  }
+
+  private layoutOpenItems(): void {
     const gap = isCoarsePointer() ? ITEM_GAP_TOUCH : ITEM_GAP;
     const buttons = this.radialContainer.querySelectorAll<HTMLButtonElement>(".sp-radial-item");
     buttons.forEach((btn, i) => {
@@ -263,12 +301,6 @@ export class Fab {
       const y = -(16 + gap * (i + 1));
       btn.style.transform = `translate(0px, ${y}px) scale(1)`;
       btn.classList.add("sp-radial-item--open");
-    });
-
-    // Focus the first menu item after animation
-    requestAnimationFrame(() => {
-      const firstItem = this.radialContainer.querySelector<HTMLButtonElement>(".sp-radial-item");
-      firstItem?.focus();
     });
   }
 
@@ -313,6 +345,9 @@ export class Fab {
         this.bus.emit("annotation:start");
         break;
       }
+      case "flow":
+        this.bus.emit("flow:toggle");
+        break;
       case "toggle-annotations": {
         this.annotationsVisible = !this.annotationsVisible;
         this.bus.emit("annotations:toggle", this.annotationsVisible);

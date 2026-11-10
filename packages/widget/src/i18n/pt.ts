@@ -60,6 +60,18 @@ export const pt: Translations = {
   "fab.messages": "Exibir barra lateral",
   "fab.annotate": "Criar nova anotação",
   "fab.annotations": "Exibir ou ocultar marcadores",
+  "fab.flowStart": "Iniciar um fluxo",
+  "fab.flowFinish": "Encerrar o fluxo",
+
+  // Multi-page flow strip
+  "flow.aria": "Fluxo de várias páginas",
+  "flow.titleLabel": "Nome do fluxo",
+  "flow.titlePlaceholder": "Opcional, ex.: Cadastro",
+  "flow.start": "Iniciar",
+  "flow.label": "Fluxo: {title} · etapa {step}",
+  "flow.labelUntitled": "Fluxo · etapa {step}",
+  "flow.finish": "Encerrar",
+  "flow.finished": "Fluxo encerrado",
 
   // Annotator
   "annotator.instruction":

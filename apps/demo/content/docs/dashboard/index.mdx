@@ -57,7 +57,8 @@ Focus the list once, then:
 | Key | Action |
 |---|---|
 | `j` / `↓`, `k` / `↑` | Move between rows |
-| `Enter` or `o` | Open the focused feedback; a second `Enter` on an open record opens it on the live page |
+| `Enter` or `o` | Open the focused feedback; a second `Enter` on an open record opens it on the live page. On a [flow](#multi-page-flows)'s row: show or hide its steps |
+| `→` / `←` | Show / hide the steps of the focused flow (`←` from a step goes back to its flow's row) |
 | `e` / `p` / `x` | Toggle resolved / in progress / won't fix (pressing the current status returns it to open) |
 | `u` | Undo the last status change |
 | `r` | Refresh |
@@ -71,6 +72,14 @@ Shortcuts require focus inside the component (they're bound to it, not to `docum
 ## Statuses and actions
 
 Four statuses: `open`, `in_progress`, `resolved`, `wont_fix`. The dashboard can set any of them (the widget's own actions stay binary — resolve/reopen). Closing a feedback (`resolved` or `wont_fix`) stamps `resolvedAt`; reopening clears it. Status changes are optimistic with undo; **delete is permanent** — it sits behind an inline confirmation and has no undo.
+
+## Multi-page flows
+
+A [flow](/docs/widget/flows) — one reviewer's comments across several pages — shows as one row: "Sign-up · 3 steps", by its authors, at the time of its latest step, where its newest step would sit in the list. Click it, or press `Enter`, to show its steps right under it, in step order, each with its "Step N"; again to hide them.
+
+Each step is still its own feedback: open it, change its status, reply to it or delete it like any other — resolve the late verification code and keep the wrong welcome name open. So a flow's row counts the steps of the current tab and search: once step 2 is resolved, the "Open" tab reads "Sign-up · 2 steps", and the "Resolved" tab shows the other. Untitled flows read "Untitled flow".
+
+The grouping is the component's: [`useSitepingInbox`](/docs/dashboard/headless) keeps `items` flat, with each record's `flowId`, `flowStep` and `flowTitle` (from servers that speak [protocol 2](/docs/server#multi-page-flows)) to group your own way.
 
 ## Discussion threads
 

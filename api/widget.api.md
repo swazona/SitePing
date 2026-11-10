@@ -67,6 +67,9 @@ export interface FeedbackPayload {
     authorName: string;
     clientId: string;
     diagnostics?: DiagnosticsSnapshot | null | undefined;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     message: string;
     projectName: string;
     screenshotDataUrl?: null | string | undefined;
@@ -273,10 +276,17 @@ export interface Translations {
     "fab.annotations": string;
     "fab.aria": string;
     "fab.badge": string;
+    "fab.flowFinish": string;
     "fab.messages": string;
     "feedback.deleted.confirmation": string;
     "feedback.error.message": string;
     "feedback.sent.confirmation": string;
+    "flow.aria": string;
+    "flow.finish": string;
+    "flow.labelUntitled": string;
+    "flow.start": string;
+    "flow.titleLabel": string;
+    "flow.titlePlaceholder": string;
     "group.byPage": string;
     "group.feedbacks": string;
     "identity.cancel": string;
@@ -360,8 +370,11 @@ export interface Translations {
     "panel.notOnPage": string;
     "comments.full": string;
     "comments.title": string;
+    "flow.finished": string;
     "comments.team": string;
     "detail.closedAt": string;
+    "fab.flowStart": string;
+    "flow.label": string;
 }
 
 export function initSiteping(config: SitepingConfig): SitepingInstance;
@@ -512,6 +525,9 @@ interface FeedbackCreateInput {
     authorName: string;
     clientId: string;
     diagnostics?: DiagnosticsSnapshot | null | undefined;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     message: string;
     projectName: string;
     screenshotDataUrl?: null | string | undefined;
@@ -535,6 +551,7 @@ interface FeedbackPage {
 }
 
 interface FeedbackQuery {
+    flowId?: string | undefined;
     limit?: number | undefined;
     page?: number | undefined;
     projectName: string;
@@ -554,6 +571,9 @@ interface FeedbackRecord {
     comments?: CommentRecord[] | undefined;
     createdAt: Date;
     diagnostics: DiagnosticsSnapshot | null;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     id: string;
     message: string;
     projectName: string;

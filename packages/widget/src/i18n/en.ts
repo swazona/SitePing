@@ -59,6 +59,18 @@ export const en: Translations = {
   "fab.messages": "Show sidebar",
   "fab.annotate": "Create new annotation",
   "fab.annotations": "Show or hide markers",
+  "fab.flowStart": "Start a flow",
+  "fab.flowFinish": "Finish the flow",
+
+  // Multi-page flow strip
+  "flow.aria": "Multi-page flow",
+  "flow.titleLabel": "Name this flow",
+  "flow.titlePlaceholder": "Optional, e.g. Sign-up",
+  "flow.start": "Start",
+  "flow.label": "Flow: {title} · step {step}",
+  "flow.labelUntitled": "Flow · step {step}",
+  "flow.finish": "Finish",
+  "flow.finished": "Flow finished",
 
   // Annotator
   "annotator.instruction":

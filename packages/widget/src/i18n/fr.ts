@@ -59,6 +59,18 @@ export const fr: Translations = {
   "fab.messages": "Afficher la barre latérale",
   "fab.annotate": "Créer une nouvelle annotation",
   "fab.annotations": "Afficher ou masquer les marqueurs",
+  "fab.flowStart": "Démarrer un parcours",
+  "fab.flowFinish": "Terminer le parcours",
+
+  // Multi-page flow strip
+  "flow.aria": "Parcours sur plusieurs pages",
+  "flow.titleLabel": "Nom du parcours",
+  "flow.titlePlaceholder": "Facultatif, ex. Inscription",
+  "flow.start": "Démarrer",
+  "flow.label": "Parcours : {title} · étape {step}",
+  "flow.labelUntitled": "Parcours · étape {step}",
+  "flow.finish": "Terminer",
+  "flow.finished": "Parcours terminé",
 
   // Annotator
   "annotator.instruction":
