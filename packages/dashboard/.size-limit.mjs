@@ -12,19 +12,25 @@ export default [
   {
     name: "ESM first load (index.js + static chunks)",
     path: firstLoad(dir, "dist/index.js"),
-    limit: "27 KB",
+    limit: "28 KB",
     gzip: true,
   },
   {
     name: "Locale dictionaries, all eight summed (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^(de|es|fr|it|ja|ko|pt|ru)-/),
-    limit: "15.5 KB",
+    limit: "17 KB",
     gzip: true,
   },
   {
     name: "Export dialog with the report formatter (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^export-dialog-/),
     limit: "8.5 KB",
+    gzip: true,
+  },
+  {
+    name: "Recording player, on the first recording opened (lazy)",
+    path: lazyLoad(dir, "dist/index.js", /^recording-player-/),
+    limit: "2.5 KB",
     gzip: true,
   },
 ];

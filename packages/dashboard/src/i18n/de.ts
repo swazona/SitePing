@@ -65,6 +65,21 @@ export const de: Translations = {
   "drawer.deleteConfirm": "Endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "drawer.deleteYes": "Löschen",
 
+  // Screen recording and component path
+  "drawer.component": "Komponente",
+  "drawer.componentPath": "Komponentenpfad",
+  "drawer.copyComponentPath": "Komponentenpfad kopieren",
+  "drawer.showFullPath": "Alle {count} Komponenten anzeigen",
+  "recording.title": "Bildschirmaufnahme",
+  "recording.none": "Keine Bildschirmaufnahme zu diesem Feedback",
+  "recording.unsafe": "Der Link der Aufnahme ist keine http(s)-URL und wird daher nicht angezeigt.",
+  "recording.player": "Player der Bildschirmaufnahme",
+  "recording.download": "Herunterladen",
+  "recording.playbackError": "Dieser Browser kann die Aufnahme nicht abspielen. Laden Sie sie stattdessen herunter.",
+  "recording.attached": "Bildschirmaufnahme angehängt",
+  "recording.duration": "Dauer",
+  "recording.size": "Größe",
+
   // Discussion thread
   "comments.title": "Antworten",
   "comments.team": "Team",

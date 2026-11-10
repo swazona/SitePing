@@ -69,6 +69,21 @@ export const fr: Translations = {
   "drawer.deleteConfirm": "Supprimer définitivement ? Action irréversible.",
   "drawer.deleteYes": "Supprimer",
 
+  // Screen recording and component path
+  "drawer.component": "Composant",
+  "drawer.componentPath": "Chemin des composants",
+  "drawer.copyComponentPath": "Copier le chemin des composants",
+  "drawer.showFullPath": "Afficher les {count} composants",
+  "recording.title": "Enregistrement d'écran",
+  "recording.none": "Aucun enregistrement d'écran pour ce feedback",
+  "recording.unsafe": "Le lien de l'enregistrement n'est pas une URL http(s) : il n'est pas affiché.",
+  "recording.player": "Lecteur de l'enregistrement d'écran",
+  "recording.download": "Télécharger",
+  "recording.playbackError": "Ce navigateur ne peut pas lire l'enregistrement. Téléchargez-le.",
+  "recording.attached": "Enregistrement d'écran joint",
+  "recording.duration": "Durée",
+  "recording.size": "Taille",
+
   // Discussion thread
   "comments.title": "Réponses",
   "comments.team": "Équipe",

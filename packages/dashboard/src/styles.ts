@@ -989,6 +989,69 @@ export const INBOX_CSS = `
   overflow-wrap: anywhere;
 }
 
+/* --------------------------------------------- component path breadcrumb */
+.spd-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: -6px 0;
+}
+.spd-crumbs-list {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--spd-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  outline: none;
+}
+.spd-crumb {
+  display: flex;
+  align-items: baseline;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* The nearest component — the one annotated — never ellipsizes first. */
+.spd-crumb:last-child { flex-shrink: 0; max-width: 100%; }
+.spd-crumb-name {
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spd-crumb:last-child .spd-crumb-name { font-weight: 600; }
+.spd-crumb-sep { flex: none; padding: 0 5px; color: var(--spd-text-3); }
+.spd-crumb-fold {
+  flex: none;
+  padding: 0 4px;
+  color: var(--spd-text-2);
+  border-radius: var(--spd-radius-xs);
+}
+@media (hover: hover) and (pointer: fine) {
+  .spd-crumb-fold:hover { color: var(--spd-text); background: var(--spd-raised); }
+}
+.spd-crumbs-copy { width: 24px; height: 24px; }
+.spd-crumbs-copy svg { width: 13px; height: 13px; }
+
+/* -------------------------------------------------------- screen recording */
+.spd-recording {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spd-recording-empty {
+  font-size: 12px;
+  color: var(--spd-text-2);
+}
+/* The lazy player's box, held while its chunk loads: no jump when it lands. */
+.spd-recording-placeholder {
+  aspect-ratio: 16 / 9;
+  border-radius: var(--spd-radius-sm);
+  background: var(--spd-raised);
+}
+
 /* ------------------------------------------------------------ diagnostics */
 .spd-diagnostics {
   display: flex;

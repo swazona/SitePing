@@ -162,3 +162,41 @@ describe("Drawer — focus trap", () => {
     expect(document.activeElement).toBe(last);
   });
 });
+
+describe("Drawer — component path and screen recording", () => {
+  it("shows the component path row only when the feedback has one", () => {
+    const { container } = renderDrawer({
+      diagnostics: { console: [], network: [], components: ["App", "Layout", "CheckoutForm"] },
+    });
+    const labels = [...container.querySelectorAll(".spd-meta-grid dt")].map((dt) => dt.textContent);
+    expect(labels).toContain("Component");
+    expect(container.querySelector('[aria-label="Component path"]')?.textContent).toBe("App›Layout›CheckoutForm");
+    // A path alone is no reason to show an empty console/network list.
+    expect(container.querySelector(".spd-diagnostics")).toBeNull();
+    cleanup();
+    const without = renderDrawer();
+    expect([...without.container.querySelectorAll(".spd-meta-grid dt")].map((dt) => dt.textContent)).not.toContain(
+      "Component",
+    );
+  });
+
+  it("always has a recording section, with the no-recording state by default", () => {
+    const { container } = renderDrawer();
+    const section = container.querySelector(".spd-recording");
+    expect(section?.textContent).toContain("Screen recording");
+    expect(section?.textContent).toContain("No screen recording for this feedback");
+  });
+
+  it("loads the player for a recording", async () => {
+    const { container } = renderDrawer({
+      diagnostics: {
+        console: [],
+        network: [],
+        recording: { url: "https://cdn.example.com/rec.webm", mimeType: "video/webm", durationMs: 4000, bytes: 9000 },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector("video source")?.getAttribute("src")).toBe("https://cdn.example.com/rec.webm"),
+    );
+  });
+});

@@ -66,6 +66,21 @@ export const it: Translations = {
   "drawer.deleteConfirm": "Eliminare definitivamente? Questa azione non può essere annullata.",
   "drawer.deleteYes": "Elimina",
 
+  // Screen recording and component path
+  "drawer.component": "Componente",
+  "drawer.componentPath": "Percorso dei componenti",
+  "drawer.copyComponentPath": "Copia il percorso dei componenti",
+  "drawer.showFullPath": "Mostra tutti i {count} componenti",
+  "recording.title": "Registrazione dello schermo",
+  "recording.none": "Nessuna registrazione dello schermo per questo feedback",
+  "recording.unsafe": "Il link della registrazione non è un URL http(s), quindi non viene mostrato.",
+  "recording.player": "Lettore della registrazione dello schermo",
+  "recording.download": "Scarica",
+  "recording.playbackError": "Questo browser non riesce a riprodurre la registrazione. Scaricala.",
+  "recording.attached": "Registrazione dello schermo allegata",
+  "recording.duration": "Durata",
+  "recording.size": "Dimensione",
+
   // Discussion thread
   "comments.title": "Risposte",
   "comments.team": "Team",

@@ -1,4 +1,11 @@
-import { buildDeepLink as buildDeepLinkFrom, type FeedbackRecord, isSafeImageUrl, parseHttpUrl } from "@siteping/core";
+import {
+  buildDeepLink as buildDeepLinkFrom,
+  type DiagnosticsSnapshot,
+  type FeedbackRecord,
+  isSafeImageUrl,
+  parseHttpUrl,
+  type RecordingInfo,
+} from "@siteping/core";
 import { type TFunction, tWithParams } from "./i18n/index.js";
 import type { InboxSiteUrl } from "./types.js";
 
@@ -160,6 +167,64 @@ export function recordPageUrl(
  */
 export function safeScreenshotUrl(record: Pick<FeedbackRecord, "screenshotUrl">): string | null {
   return record.screenshotUrl && isSafeImageUrl(record.screenshotUrl) ? record.screenshotUrl : null;
+}
+
+/** Media types a recording is played as; anything else plays untyped. */
+const RECORDING_TYPES: ReadonlySet<string> = new Set(["video/webm", "video/mp4"]);
+
+/** A recording the inbox may render: its URL checked, its metadata kept only when well formed. */
+export interface SafeRecording {
+  /** Absolute http(s) URL, as `URL` serialized it. */
+  url: string;
+  mimeType: RecordingInfo["mimeType"] | null;
+  durationMs: number | null;
+  bytes: number | null;
+}
+
+const finiteNonNegative = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+
+/**
+ * What the drawer shows for a feedback's screen recording: `"none"` when it
+ * has none, `"unsafe"` when its URL is not an absolute http(s) one, else
+ * the recording. The server keeps only URLs its `recordingStorage` owns,
+ * but a store can hold any string (a direct store caller, a migrated
+ * database, a custom source): a `javascript:` or `data:` URL must never
+ * reach a `<video src>` or a download link.
+ */
+export function safeRecording(
+  diagnostics: Pick<DiagnosticsSnapshot, "recording"> | null | undefined,
+): SafeRecording | "none" | "unsafe" {
+  const recording: unknown = diagnostics?.recording;
+  if (recording === undefined || recording === null) return "none";
+  const url = typeof recording === "object" && "url" in recording ? recording.url : undefined;
+  const parsed = typeof url === "string" ? parseHttpUrl(url) : null;
+  if (!parsed) return "unsafe";
+  const info = recording as Partial<Record<keyof RecordingInfo, unknown>>;
+  return {
+    url: parsed.href,
+    mimeType:
+      typeof info.mimeType === "string" && RECORDING_TYPES.has(info.mimeType)
+        ? (info.mimeType as RecordingInfo["mimeType"])
+        : null,
+    durationMs: finiteNonNegative(info.durationMs),
+    bytes: finiteNonNegative(info.bytes),
+  };
+}
+
+/** Longest component path shown — what the widget captures at most. */
+const MAX_COMPONENTS = 30;
+
+/**
+ * The React component path of a feedback, root first, as names fit to
+ * print: non-strings and blank names dropped, at most 30 (the nearest kept).
+ * Empty when the feedback has none.
+ */
+export function componentPath(diagnostics: Pick<DiagnosticsSnapshot, "components"> | null | undefined): string[] {
+  const names: unknown = diagnostics?.components;
+  if (!Array.isArray(names)) return [];
+  const kept = names.filter((name): name is string => typeof name === "string" && name.trim() !== "");
+  return kept.slice(-MAX_COMPONENTS).map((name) => name.trim());
 }
 
 /** First 8 chars of a feedback id — the mono `#short-id` in the drawer head. */

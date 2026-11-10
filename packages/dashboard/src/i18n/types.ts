@@ -69,6 +69,27 @@ export interface Translations {
   "drawer.deleteConfirm": string;
   "drawer.deleteYes": string;
 
+  // Screen recording and component path
+  /** Label of the React component path row. */
+  "drawer.component": string;
+  /** Accessible name of the component breadcrumb. */
+  "drawer.componentPath": string;
+  "drawer.copyComponentPath": string;
+  /** The collapsed middle of a long component path, expanded. */
+  "drawer.showFullPath": string;
+  "recording.title": string;
+  "recording.none": string;
+  /** A stored recording whose URL is not an absolute http(s) one. */
+  "recording.unsafe": string;
+  /** Accessible name of the `<video>`. */
+  "recording.player": string;
+  "recording.download": string;
+  "recording.playbackError": string;
+  /** The list row's indicator. */
+  "recording.attached": string;
+  "recording.duration": string;
+  "recording.size": string;
+
   // Discussion thread — deleting a reply reuses "drawer.deleteYes" and "inbox.cancel"
   "comments.title": string;
   /** Badge on a reply from the project team. */

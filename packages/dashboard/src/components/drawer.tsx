@@ -1,13 +1,22 @@
 import type { FeedbackPermissions, FeedbackStatus } from "@siteping/core";
 import type { ReactElement, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { formatAbsolute, formatRelativeTime, recordPageUrl, shortId, toDateTimeAttr } from "../format.js";
+import {
+  componentPath,
+  formatAbsolute,
+  formatRelativeTime,
+  recordPageUrl,
+  shortId,
+  toDateTimeAttr,
+} from "../format.js";
 import { getStatusLabel, getTypeLabel } from "../i18n/index.js";
 import type { InboxRecord, InboxSiteUrl, InboxState } from "../types.js";
+import { ComponentPath } from "./component-path.js";
 import { STATUS_ICONS, trapTab, useInboxUi } from "./context.js";
 import { Diagnostics } from "./diagnostics.js";
 import { EvidenceCard } from "./evidence-card.js";
 import { CloseIcon, ExportIcon, ExternalIcon, TrashIcon } from "./icons.js";
+import { RecordingSection } from "./recording.js";
 import { StatusMenu } from "./status-menu.js";
 import { Thread } from "./thread.js";
 
@@ -83,6 +92,7 @@ export function Drawer({
 
   const diagnostics = record.diagnostics;
   const hasDiagnostics = diagnostics !== null && diagnostics.console.length + diagnostics.network.length > 0;
+  const components = componentPath(diagnostics);
   // Null for non-http(s) record URLs — the link/CTA render as plain text / not at all.
   const pageUrl = recordPageUrl(record, { siteUrl });
   const deepLink = recordPageUrl(record, { siteUrl, deepLinkParam });
@@ -169,6 +179,14 @@ export function Drawer({
                 record.url
               )}
             </dd>
+            {components.length > 0 ? (
+              <>
+                <dt className="spd-meta-label">{t("drawer.component")}</dt>
+                <dd className="spd-meta-value">
+                  <ComponentPath names={components} />
+                </dd>
+              </>
+            ) : null}
             <dt className="spd-meta-label">{t("drawer.viewport")}</dt>
             <dd className="spd-meta-value" data-mono>
               {record.viewport}
@@ -184,6 +202,7 @@ export function Drawer({
               {record.userAgent}
             </dd>
           </dl>
+          <RecordingSection diagnostics={diagnostics} />
           {hasDiagnostics && diagnostics ? <Diagnostics diagnostics={diagnostics} /> : null}
           <Thread
             record={record}

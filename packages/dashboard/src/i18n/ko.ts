@@ -69,6 +69,21 @@ export const ko: Translations = {
   "drawer.deleteConfirm": "영구적으로 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
   "drawer.deleteYes": "삭제",
 
+  // Screen recording and component path
+  "drawer.component": "컴포넌트",
+  "drawer.componentPath": "컴포넌트 경로",
+  "drawer.copyComponentPath": "컴포넌트 경로 복사",
+  "drawer.showFullPath": "컴포넌트 {count}개 모두 보기",
+  "recording.title": "화면 녹화",
+  "recording.none": "이 피드백에는 화면 녹화가 없습니다",
+  "recording.unsafe": "녹화 링크가 http(s) URL이 아니어서 표시하지 않습니다.",
+  "recording.player": "화면 녹화 플레이어",
+  "recording.download": "다운로드",
+  "recording.playbackError": "이 브라우저에서는 녹화를 재생할 수 없습니다. 다운로드해 주세요.",
+  "recording.attached": "화면 녹화 첨부됨",
+  "recording.duration": "길이",
+  "recording.size": "크기",
+
   // Discussion thread
   "comments.title": "답글",
   "comments.team": "팀",
