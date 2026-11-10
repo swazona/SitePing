@@ -69,6 +69,21 @@ export const ja: Translations = {
   "drawer.deleteConfirm": "完全に削除しますか？この操作は取り消せません。",
   "drawer.deleteYes": "削除",
 
+  // Screen recording and component path
+  "drawer.component": "コンポーネント",
+  "drawer.componentPath": "コンポーネントパス",
+  "drawer.copyComponentPath": "コンポーネントパスをコピー",
+  "drawer.showFullPath": "{count} 個のコンポーネントをすべて表示",
+  "recording.title": "画面録画",
+  "recording.none": "このフィードバックには画面録画がありません",
+  "recording.unsafe": "録画のリンクが http(s) URL ではないため、表示しません。",
+  "recording.player": "画面録画プレーヤー",
+  "recording.download": "ダウンロード",
+  "recording.playbackError": "このブラウザでは録画を再生できません。ダウンロードしてください。",
+  "recording.attached": "画面録画あり",
+  "recording.duration": "長さ",
+  "recording.size": "サイズ",
+
   // Discussion thread
   "comments.title": "返信",
   "comments.team": "チーム",

@@ -83,6 +83,10 @@ The record keeps the URL only: `diagnostics` is the JSON column every store alre
 
 If the upload fails on the network, the feedback and its video wait together in the [offline queue](/docs/widget#reliability-details-you-get-for-free) and are sent together later. If the server refuses the video (too large, not a video), the feedback is sent without it and the widget says so.
 
+## Watching it
+
+The [dashboard](/docs/dashboard#recordings-and-component-paths)'s drawer plays the recording, with its length, size and a download link. The widget's own panel keeps its chunk small: its detail view shows **Watch the recording (0:12)**, a link that opens the video in a new tab, next to the React component path when one was captured. Both show only an absolute http(s) URL.
+
 ## Privacy
 
 A recording shows whatever the reviewer shares — the whole screen, if they pick it. The `data-siteping-ignore` [masking](/docs/widget/screenshots#privacy-masking) applies to screenshots, which the widget renders itself; it cannot reach into a video the browser records. Tell reviewers what a recording contains before you turn it on.

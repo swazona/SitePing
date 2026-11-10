@@ -81,6 +81,17 @@ Each step is still its own feedback: open it, change its status, reply to it or 
 
 The grouping is the component's: [`useSitepingInbox`](/docs/dashboard/headless) keeps `items` flat, with each record's `flowId`, `flowStep` and `flowTitle` (from servers that speak [protocol 2](/docs/server#multi-page-flows)) to group your own way.
 
+## Recordings and component paths
+
+What the widget captured alongside a feedback shows in the drawer:
+
+- **Component** — on a React page, the [component path](/docs/widget/configuration) from the root down to the annotated element, as a breadcrumb: `App › Layout › CheckoutForm`. Past four names its middle folds behind a `…` button that shows the rest; a long name ellipsizes on its own, so the annotated component, last, stays whole. The copy button puts the whole path on the clipboard, `›`-separated.
+- **Screen recording** — a [recording](/docs/widget/recording) plays in the browser's own player. The video loads only its metadata until you press play, and the player itself is a separate chunk (about 1.3 kB gzipped), loaded with the first recording you open. Its length, size and a **Download** link sit under it; where the browser cannot decode the file, a line says so and the download link stays. A feedback without a recording says so too.
+
+A row with a recording carries a video icon in the list.
+
+Only an absolute `http:` or `https:` recording URL is played or linked. The server keeps only URLs its `recordingStorage` recognizes, but a store can hold any string — another caller, a migration, a custom source — so any other URL (`javascript:`, `data:`, a relative path) is never put in the player or a link: the drawer says it is not shown. The browser honors **Download** as a download for a URL on the inbox's own origin; a storage on another origin opens the video in a new tab instead.
+
 ## Discussion threads
 
 The drawer shows the opened feedback's thread — the reviewer's replies from the widget, your team's from here. Pass `author` to reply and delete from the inbox:

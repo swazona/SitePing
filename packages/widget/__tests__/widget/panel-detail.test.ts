@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import { createT } from "../../src/i18n/index.js";
 import { normalizePanelActions } from "../../src/panel-actions.js";
 import { DETAIL_CSS, type DetailCallbacks, DetailView } from "../../src/panel-detail.js";
+import { mediaRows } from "../../src/panel-media.js";
 import { buildThemeColors } from "../../src/styles/theme.js";
 
 // ---------------------------------------------------------------------------
@@ -1168,6 +1169,95 @@ describe("DetailView", () => {
   // -------------------------------------------------------------------------
   // Diagnostics section — captureDiagnostics snapshot rendering
   // -------------------------------------------------------------------------
+
+  describe("component path and screen recording", () => {
+    beforeEach(() => {
+      setup.callbacks.mediaRows = vi.fn((fb: FeedbackResponse) => mediaRows(fb, createT("en")));
+    });
+
+    const metaRow = (label: string): HTMLElement | null =>
+      [...setup.view.element.querySelectorAll<HTMLElement>(".sp-detail-meta-row")].find(
+        (row) => row.querySelector(".sp-detail-meta-label")?.textContent === label,
+      ) ?? null;
+    const withDiagnostics = (diagnostics: Record<string, unknown>) =>
+      makeFeedback({ diagnostics: { console: [], network: [], ...diagnostics } as unknown as never });
+
+    it("shows the component path as a breadcrumb", () => {
+      setup.view.show(withDiagnostics({ components: ["App", "Layout", "CheckoutForm"] }), 1);
+      const value = metaRow("Component")?.querySelector(".sp-detail-meta-value");
+      expect(value?.textContent).toBe("App \u203a Layout \u203a CheckoutForm");
+    });
+
+    it("folds the middle of a long path, keeping it whole in the title", () => {
+      const names = ["App", "Providers", "Router", "Layout", "Page", "CheckoutForm"];
+      setup.view.show(withDiagnostics({ components: names }), 1);
+      const value = metaRow("Component")?.querySelector<HTMLElement>(".sp-detail-meta-value");
+      expect(value?.textContent).toBe("App \u203a \u2026 \u203a Page \u203a CheckoutForm");
+      expect(value?.title).toBe(names.join(" \u203a "));
+    });
+
+    it("renders hostile component names as text", () => {
+      setup.view.show(withDiagnostics({ components: ["<img src=x onerror=alert(1)>", 7] }), 1);
+      expect(setup.view.element.querySelector("img")).toBeNull();
+      expect(metaRow("Component")?.textContent).toContain("<img src=x onerror=alert(1)>");
+    });
+
+    it("links the recording in a new tab, with its length", () => {
+      setup.view.show(
+        withDiagnostics({
+          recording: { url: "https://cdn.example.com/rec.webm", mimeType: "video/webm", durationMs: 42_000, bytes: 9 },
+        }),
+        1,
+      );
+      const link = metaRow("Screen recording")?.querySelector("a");
+      expect(link?.getAttribute("href")).toBe("https://cdn.example.com/rec.webm");
+      expect(link?.target).toBe("_blank");
+      expect(link?.rel).toBe("noopener noreferrer");
+      expect(link?.textContent).toBe("Watch the recording (0:42)");
+    });
+
+    it.each(["javascript:alert(1)", "data:video/webm;base64,GkXfow==", "/relative.webm"])(
+      "never links a %j recording",
+      (url) => {
+        setup.view.show(withDiagnostics({ recording: { url, mimeType: "video/webm", durationMs: 1, bytes: 1 } }), 1);
+        expect(metaRow("Screen recording")).toBeNull();
+        expect(setup.view.element.querySelector(`a[href^="${url.slice(0, 5)}"]`)).toBeNull();
+      },
+    );
+
+    it("adds neither row to a feedback without them", () => {
+      setup.view.show(makeFeedback(), 1);
+      expect(metaRow("Component")).toBeNull();
+      expect(metaRow("Screen recording")).toBeNull();
+    });
+
+    it("places the rows right after the page", () => {
+      setup.view.show(
+        withDiagnostics({
+          components: ["App"],
+          recording: { url: "https://cdn.example.com/rec.webm", mimeType: "video/webm", durationMs: 1000, bytes: 9 },
+        }),
+        1,
+      );
+      const labels = [...setup.view.element.querySelectorAll(".sp-detail-meta-label")].map((l) => l.textContent);
+      expect(labels.slice(0, 4)).toEqual(["Page", "Component", "Screen recording", "Author"]);
+    });
+
+    it("omits the length when it is not a valid duration", () => {
+      setup.view.show(
+        withDiagnostics({
+          recording: {
+            url: "https://cdn.example.com/rec.webm",
+            mimeType: "video/webm",
+            durationMs: Number.NaN,
+            bytes: 9,
+          },
+        }),
+        1,
+      );
+      expect(metaRow("Screen recording")?.querySelector("a")?.textContent).toBe("Watch the recording");
+    });
+  });
 
   describe("diagnostics section", () => {
     it("does not render the section when diagnostics is null", () => {

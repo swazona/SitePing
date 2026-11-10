@@ -65,6 +65,21 @@ export const es: Translations = {
   "drawer.deleteConfirm": "¿Eliminar permanentemente? Esta acción no se puede deshacer.",
   "drawer.deleteYes": "Eliminar",
 
+  // Screen recording and component path
+  "drawer.component": "Componente",
+  "drawer.componentPath": "Ruta de componentes",
+  "drawer.copyComponentPath": "Copiar la ruta de componentes",
+  "drawer.showFullPath": "Mostrar los {count} componentes",
+  "recording.title": "Grabación de pantalla",
+  "recording.none": "No hay grabación de pantalla para este comentario",
+  "recording.unsafe": "El enlace de la grabación no es una URL http(s), así que no se muestra.",
+  "recording.player": "Reproductor de la grabación de pantalla",
+  "recording.download": "Descargar",
+  "recording.playbackError": "Este navegador no puede reproducir la grabación. Descárgala.",
+  "recording.attached": "Grabación de pantalla adjunta",
+  "recording.duration": "Duración",
+  "recording.size": "Tamaño",
+
   // Discussion thread
   "comments.title": "Respuestas",
   "comments.team": "Equipo",

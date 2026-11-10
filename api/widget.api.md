@@ -276,6 +276,7 @@ export interface Translations {
     "detail.metadata": string;
     "detail.page": string;
     "detail.position": string;
+    "detail.recording": string;
     "detail.reopen": string;
     "detail.resolve": string;
     "detail.resolvedAt": string;
@@ -407,7 +408,9 @@ export interface Translations {
     "flow.finished": string;
     "comments.team": string;
     "detail.closedAt": string;
+    "detail.component": string;
     "fab.flowStart": string;
+    "detail.watchRecording": string;
     "flow.label": string;
 }
 

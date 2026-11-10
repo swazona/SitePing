@@ -125,3 +125,26 @@ describe("Row", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
+
+describe("Row — screen recording indicator", () => {
+  const diagnostics = (url: string) => ({
+    console: [],
+    network: [],
+    recording: { url, mimeType: "video/webm" as const, durationMs: 4000, bytes: 9000 },
+  });
+
+  it("marks a feedback with a recording, with an accessible name", () => {
+    const { row } = renderRow({ diagnostics: diagnostics("https://cdn.example.com/rec.webm") });
+    const indicator = row.querySelector(".spd-row-recording");
+    expect(indicator?.getAttribute("role")).toBe("img");
+    expect(indicator?.getAttribute("aria-label")).toBe("Screen recording attached");
+  });
+
+  it("shows nothing without a recording, or for one the drawer would not play", () => {
+    expect(renderRow().row.querySelector(".spd-row-recording")).toBeNull();
+    cleanup();
+    expect(
+      renderRow({ diagnostics: diagnostics("javascript:alert(1)") }).row.querySelector(".spd-row-recording"),
+    ).toBeNull();
+  });
+});

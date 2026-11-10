@@ -4,7 +4,7 @@ import { sitepingLibrary, terserPass } from "../../tsup.preset.js";
 
 type EsbuildPlugin = NonNullable<Options["esbuildPlugins"]>[number];
 
-// `INBOX_CSS` (and the export dialog's lazy `EXPORT_CSS`) are template
+// `INBOX_CSS` (and the lazy `EXPORT_CSS` and `RECORDING_CSS`) are template
 // literals, so the JS minifier ships them verbatim — comments and
 // indentation included. Minify them as CSS instead (~1.8 kB gzip off the ESM
 // entry). The build fails if a literal stops being a plain one, rather than
@@ -12,9 +12,9 @@ type EsbuildPlugin = NonNullable<Options["esbuildPlugins"]>[number];
 const minifyInboxCss: EsbuildPlugin = {
   name: "minify-inbox-css",
   setup(build) {
-    build.onLoad({ filter: /[\\/]src[\\/](?:export-)?styles\.ts$/ }, async (args) => {
+    build.onLoad({ filter: /[\\/]src[\\/](?:export-|recording-)?styles\.ts$/ }, async (args) => {
       const source = await readFile(args.path, "utf8");
-      const literal = /export const (INBOX_CSS|EXPORT_CSS) = `([^`]*)`;/.exec(source);
+      const literal = /export const (INBOX_CSS|EXPORT_CSS|RECORDING_CSS) = `([^`]*)`;/.exec(source);
       const name = literal?.[1];
       const css = literal?.[2];
       if (!literal || !name || !css || css.includes("${") || css.includes("\\")) {

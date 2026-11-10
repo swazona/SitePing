@@ -81,6 +81,17 @@ Chaque étape reste un feedback à part entière : ouvrez-la, changez son statut
 
 Le regroupement est celui du composant : [`useSitepingInbox`](/fr/docs/dashboard/headless) garde `items` à plat, avec les `flowId`, `flowStep` et `flowTitle` de chaque enregistrement (depuis les serveurs qui parlent le [protocole 2](/fr/docs/server#parcours-sur-plusieurs-pages)) pour regrouper à votre façon.
 
+## Enregistrements et chemins de composants
+
+Ce que le widget a capturé avec un feedback s'affiche dans le tiroir :
+
+- **Composant** — sur une page React, le [chemin des composants](/fr/docs/widget/configuration) de la racine jusqu'à l'élément annoté, en fil d'Ariane : `App › Layout › CheckoutForm`. Au-delà de quatre noms, son milieu se replie derrière un bouton `…` qui affiche le reste ; un nom long s'abrège seul, si bien que le composant annoté, en dernier, reste entier. Le bouton de copie met le chemin entier dans le presse-papiers, séparé par des `›`.
+- **Enregistrement d'écran** — un [enregistrement](/fr/docs/widget/recording) se lit dans le lecteur du navigateur. La vidéo ne charge que ses métadonnées tant que vous n'appuyez pas sur lecture, et le lecteur lui-même est un chunk séparé (environ 1,3 kB gzippé), chargé avec le premier enregistrement ouvert. Sa durée, sa taille et un lien **Télécharger** se trouvent dessous ; quand le navigateur ne sait pas décoder le fichier, une ligne le dit et le lien de téléchargement reste. Un feedback sans enregistrement le dit aussi.
+
+Une ligne avec un enregistrement porte une icône vidéo dans la liste.
+
+Seule une URL d'enregistrement absolue en `http:` ou `https:` est lue ou liée. Le serveur ne garde que les URL que son `recordingStorage` reconnaît, mais un store peut contenir n'importe quelle chaîne — un autre appelant, une migration, une source personnalisée — : toute autre URL (`javascript:`, `data:`, un chemin relatif) n'entre jamais dans le lecteur ni dans un lien, et le tiroir indique qu'elle n'est pas affichée. Le navigateur traite **Télécharger** comme un téléchargement pour une URL de l'origine de l'inbox ; un stockage sur une autre origine ouvre la vidéo dans un nouvel onglet.
+
 ## Fils de discussion
 
 Le tiroir montre le fil du feedback ouvert — les réponses du relecteur depuis le widget, celles de votre équipe depuis ici. Passez `author` pour répondre et supprimer depuis l'inbox :

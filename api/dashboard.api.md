@@ -304,6 +304,7 @@ export interface Translations {
     "drawer.author": string;
     "drawer.browser": string;
     "drawer.close": string;
+    "drawer.copyComponentPath": string;
     "drawer.delete": string;
     "drawer.deleteConfirm": string;
     "drawer.deleteYes": string;
@@ -382,6 +383,12 @@ export interface Translations {
     "inbox.typeFilter": string;
     "inbox.undo": string;
     "inbox.viewAll": string;
+    "recording.download": string;
+    "recording.duration": string;
+    "recording.none": string;
+    "recording.playbackError": string;
+    "recording.size": string;
+    "recording.title": string;
     "shortcuts.close": string;
     "shortcuts.title": string;
     "status.all": string;
@@ -402,10 +409,16 @@ export interface Translations {
     "type.change": string;
     "type.other": string;
     "type.question": string;
+    "recording.unsafe": string;
+    "recording.player": string;
+    "drawer.componentPath": string;
     "comments.team": string;
     "flow.stepLabel": string;
+    "drawer.component": string;
     "flow.collapsed": string;
     "inbox.resultsCount": string;
+    "drawer.showFullPath": string;
+    "recording.attached": string;
     "flow.step": string;
 }
 

@@ -83,6 +83,10 @@ L'enregistrement en base ne garde que l'URL : `diagnostics` est la colonne JSON 
 
 Si l'envoi échoue sur le réseau, le feedback et sa vidéo attendent ensemble dans la [file hors ligne](/fr/docs/widget#la-fiabilité-sans-rien-faire) et partent ensemble plus tard. Si le serveur refuse la vidéo (trop grande, pas une vidéo), le feedback part sans elle et le widget le signale.
 
+## Le regarder
+
+Le tiroir du [dashboard](/fr/docs/dashboard#enregistrements-et-chemins-de-composants) lit l'enregistrement, avec sa durée, sa taille et un lien de téléchargement. Le panneau du widget garde son chunk léger : sa vue détail affiche **Voir l'enregistrement (0:12)**, un lien qui ouvre la vidéo dans un nouvel onglet, à côté du chemin des composants React quand il a été capturé. Les deux n'affichent qu'une URL http(s) absolue.
+
 ## Confidentialité
 
 Un enregistrement montre tout ce que le relecteur partage — l'écran entier, s'il le choisit. Le [masquage](/fr/docs/widget/screenshots#masquer-les-données-sensibles) `data-siteping-ignore` s'applique aux captures d'écran, que le widget dessine lui-même ; il ne peut rien sur une vidéo enregistrée par le navigateur. Prévenez les relecteurs de ce que contient un enregistrement avant de l'activer.

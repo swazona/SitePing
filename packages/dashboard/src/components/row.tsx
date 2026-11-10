@@ -1,10 +1,17 @@
 import type { FeedbackRecord } from "@siteping/core";
 import type { ReactElement } from "react";
 import type { FlowGroup } from "../flows.js";
-import { formatAbsolute, formatRelativeTime, pathFromUrl, safeScreenshotUrl, toDateTimeAttr } from "../format.js";
+import {
+  formatAbsolute,
+  formatRelativeTime,
+  pathFromUrl,
+  safeRecording,
+  safeScreenshotUrl,
+  toDateTimeAttr,
+} from "../format.js";
 import { getStatusLabel, getTypeLabel, tWithParams } from "../i18n/index.js";
 import { STATUS_ICONS, useInboxUi } from "./context.js";
-import { CameraIcon, ChevronDownIcon } from "./icons.js";
+import { CameraIcon, ChevronDownIcon, VideoIcon } from "./icons.js";
 
 interface RowProps {
   record: FeedbackRecord;
@@ -38,6 +45,8 @@ export function Row({
   const typeLabel = getTypeLabel(record.type, t);
   const path = pathFromUrl(record.url);
   const inFlow = step !== undefined;
+  // Only a recording the drawer would play: an unsafe URL gets no promise of one.
+  const hasRecording = typeof safeRecording(record.diagnostics) === "object";
   const className = `spd-row${inFlow ? " spd-row-step" : ""}${focused ? " spd-row-focused" : ""}${leaving ? " spd-row-leaving" : ""}`;
 
   const handleClick = (): void => {
@@ -82,6 +91,16 @@ export function Row({
       {safeScreenshotUrl(record) ? (
         <span className="spd-row-camera" role="img" aria-label={t("drawer.screenshotAlt")}>
           <CameraIcon />
+        </span>
+      ) : null}
+      {hasRecording ? (
+        <span
+          className="spd-row-camera spd-row-recording"
+          role="img"
+          aria-label={t("recording.attached")}
+          title={t("recording.attached")}
+        >
+          <VideoIcon />
         </span>
       ) : null}
       <time

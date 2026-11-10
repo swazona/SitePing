@@ -121,6 +121,26 @@ export function CameraIcon({ className }: IconProps): ReactElement {
   );
 }
 
+/** Video camera — a feedback with a screen recording. */
+export function VideoIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg {...SVG} aria-hidden="true" className={className}>
+      <rect x="1.75" y="4.25" width="9" height="7.5" rx="1.5" />
+      <path d="m10.75 7 3.5-2v6l-3.5-2" />
+    </svg>
+  );
+}
+
+/** Two stacked sheets — copy to the clipboard. */
+export function CopyIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg {...SVG} aria-hidden="true" className={className}>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+      <path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" />
+    </svg>
+  );
+}
+
 export function TrashIcon({ className }: IconProps): ReactElement {
   return (
     <svg {...SVG} aria-hidden="true" className={className}>

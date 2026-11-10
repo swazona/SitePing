@@ -65,6 +65,21 @@ export const ru: Translations = {
   "drawer.deleteConfirm": "Удалить навсегда? Это действие необратимо.",
   "drawer.deleteYes": "Удалить",
 
+  // Screen recording and component path
+  "drawer.component": "Компонент",
+  "drawer.componentPath": "Путь компонентов",
+  "drawer.copyComponentPath": "Скопировать путь компонентов",
+  "drawer.showFullPath": "Показать все компоненты ({count})",
+  "recording.title": "Запись экрана",
+  "recording.none": "К этому отзыву нет записи экрана",
+  "recording.unsafe": "Ссылка на запись — не http(s)-URL, поэтому она не показана.",
+  "recording.player": "Проигрыватель записи экрана",
+  "recording.download": "Скачать",
+  "recording.playbackError": "Этот браузер не может воспроизвести запись. Скачайте её.",
+  "recording.attached": "Приложена запись экрана",
+  "recording.duration": "Длительность",
+  "recording.size": "Размер",
+
   // Discussion thread
   "comments.title": "Ответы",
   "comments.team": "Команда",

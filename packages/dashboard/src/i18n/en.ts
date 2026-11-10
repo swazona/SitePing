@@ -69,6 +69,21 @@ export const en: Translations = {
   "drawer.deleteConfirm": "Delete permanently? This cannot be undone.",
   "drawer.deleteYes": "Delete",
 
+  // Screen recording and component path
+  "drawer.component": "Component",
+  "drawer.componentPath": "Component path",
+  "drawer.copyComponentPath": "Copy component path",
+  "drawer.showFullPath": "Show all {count} components",
+  "recording.title": "Screen recording",
+  "recording.none": "No screen recording for this feedback",
+  "recording.unsafe": "The recording link is not an http(s) URL, so it is not shown.",
+  "recording.player": "Screen recording player",
+  "recording.download": "Download",
+  "recording.playbackError": "This browser can't play the recording. Download it instead.",
+  "recording.attached": "Screen recording attached",
+  "recording.duration": "Duration",
+  "recording.size": "Size",
+
   // Discussion thread
   "comments.title": "Replies",
   "comments.team": "Team",
