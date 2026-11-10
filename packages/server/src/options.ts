@@ -186,6 +186,14 @@ export type SitepingReporterEvent =
   | { type: "reopened"; status: OpenFeedbackStatus }
   | { type: "replied"; comment: SitepingCreatedComment };
 
+/**
+ * What `notifyTeam` tells the team about: a reporter event, or a new
+ * feedback (`created`). Unlike `notifyReporter`, `replied` comes for every
+ * new reply, whatever its `comment.authorRole`: tell the reporter's from the
+ * team's own by it.
+ */
+export type SitepingTeamEvent = { type: "created" } | SitepingReporterEvent;
+
 /** Options shared by both access policies. */
 export interface SitepingHandlerBaseOptions<Principal> {
   /** Persistence backend — any `SitepingStore` (Prisma, Drizzle, memory, your own). */
@@ -323,6 +331,30 @@ export interface SitepingHandlerBaseOptions<Principal> {
   notifyReporter?(
     feedback: FeedbackRecord,
     event: SitepingReporterEvent,
+    context: SitepingRequestContext<Principal>,
+  ): void | Promise<void>;
+  /**
+   * Tell the team what happened to a feedback — post to a chat, send an
+   * email: `@siteping/integration-notify` builds one for Slack, Telegram,
+   * WhatsApp, email and signed webhooks. Called with the stored feedback
+   * (`authorEmail` included, which may be empty) once per inserted feedback
+   * (`created`, never for a replayed `clientId`), on a status change that
+   * closes or reopens it (`resolved`, `reopened`, decided as for
+   * `notifyReporter`), and once per new reply of either role (`replied`).
+   *
+   * Fire-and-forget, like `webhooks`: never awaited, so a slow chat API
+   * never holds the request; its promise goes to `waitUntil` when one is
+   * set, and a throw or a rejection is logged as
+   * `[siteping] Hook notifyTeam failed`, never failing the request. A reply's
+   * feedback is looked up in the background, as for `notifyReporter`. A store
+   * with threads must implement `addCommentIfAbsent` (the handler refuses to
+   * start without it). Status changes synced from a tracker by
+   * `@siteping/integration-issues` webhooks do not go through the handler:
+   * call it from their `onStatusSynced`.
+   */
+  notifyTeam?(
+    feedback: FeedbackRecord,
+    event: SitepingTeamEvent,
     context: SitepingRequestContext<Principal>,
   ): void | Promise<void>;
   /**

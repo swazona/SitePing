@@ -6,7 +6,7 @@ import {
   type SitepingStore,
 } from "@siteping/core";
 import { ERROR_MESSAGES } from "../constants.js";
-import type { Notify } from "../notify.js";
+import type { Notify, NotifyTeam } from "../notify.js";
 import type { SitepingCreatedComment, SitepingHandlerBaseOptions, SitepingLifecycleHooks } from "../options.js";
 import type { Pipeline, Scope } from "../pipeline.js";
 import { findFeedback } from "../reporter.js";
@@ -19,6 +19,7 @@ interface CreateCommentDependencies<Principal> {
   beforeComment: SitepingHandlerBaseOptions<Principal>["beforeComment"];
   onCommentCreated: SitepingLifecycleHooks<Principal>["onCommentCreated"];
   notifyReporter: SitepingHandlerBaseOptions<Principal>["notifyReporter"];
+  team: NotifyTeam<Principal> | undefined;
 }
 
 /** `POST` with a `feedbackId` — add a comment to that feedback's thread, idempotent on `clientId`. */
@@ -29,6 +30,7 @@ export function createCommentOperation<Principal>({
   beforeComment,
   onCommentCreated,
   notifyReporter,
+  team,
 }: CreateCommentDependencies<Principal>) {
   return async (scope: Scope<Principal>, body: unknown): Promise<Response> => {
     const payload = pipeline.validate(scope, commentCreateSchema, body);
@@ -74,6 +76,15 @@ export function createCommentOperation<Principal>({
             onCommentCreated(reply, scope.context),
           );
         }
+        team?.(
+          scope,
+          { feedbackId, projectName, commentId: stored.id },
+          () => findFeedback(store, feedbackId, projectName),
+          {
+            type: "replied",
+            comment: reply,
+          },
+        );
         if (notifyReporter && stored.authorRole === "team") {
           const subject = { feedbackId, projectName, commentId: stored.id, event: "replied" };
           await pipeline.runHook(scope, "notifyReporter", subject, async () => {

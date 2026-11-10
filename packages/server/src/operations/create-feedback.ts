@@ -9,7 +9,7 @@ import {
   type SitepingStore,
 } from "@siteping/core";
 import { ERROR_MESSAGES, MAX_ANNOTATIONS_PER_FEEDBACK } from "../constants.js";
-import type { Notify } from "../notify.js";
+import type { Notify, NotifyTeam } from "../notify.js";
 import type { SitepingHandlerBaseOptions, SitepingLifecycleHooks } from "../options.js";
 import type { Pipeline, Scope } from "../pipeline.js";
 import { feedbackCreateSchema } from "../validation.js";
@@ -20,6 +20,7 @@ interface CreateFeedbackDependencies<Principal> {
   notify: Notify<Principal>;
   beforeCreate: SitepingHandlerBaseOptions<Principal>["beforeCreate"];
   onCreated: SitepingLifecycleHooks<Principal>["onCreated"];
+  team: NotifyTeam<Principal> | undefined;
   recordingStorage: RecordingStorage | undefined;
 }
 
@@ -88,6 +89,7 @@ export function createFeedbackOperation<Principal>({
   notify,
   beforeCreate,
   onCreated,
+  team,
   recordingStorage,
 }: CreateFeedbackDependencies<Principal>) {
   /**
@@ -189,6 +191,7 @@ export function createFeedbackOperation<Principal>({
       if (owner && inserted && feedback.projectName === input.projectName) {
         notify(scope, { event: "feedback.created", feedback });
         if (onCreated) await pipeline.runHook(scope, "onCreated", subject, () => onCreated(feedback, scope.context));
+        team?.(scope, subject, feedback, { type: "created" });
       }
 
       // A clientId is unique across the whole store, so a replay that

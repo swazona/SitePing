@@ -45,6 +45,7 @@ export type {
   SitepingRecordingUploadTarget,
   SitepingReporterEvent,
   SitepingRequestContext,
+  SitepingTeamEvent,
 } from "./options.js";
 export {
   createMemoryRateLimitStore,
