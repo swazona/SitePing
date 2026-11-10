@@ -17,6 +17,9 @@ Trois variables d'environnement :
 | `SITEPING_API_KEY` | oui | L'[`apiKey`](/fr/docs/server#options) du handler |
 | `SITEPING_PROJECT` | oui | Le `projectName` du widget |
 | `SITEPING_AUTHOR_NAME` | non | Le nom sous lequel les réponses sont publiées. Par défaut `AI agent` |
+| `SITEPING_REDACT_SECRETS` | non | Masquer jetons et clés d'API. Par défaut `true` |
+| `SITEPING_REDACT_EMAILS` | non | Masquer les adresses e-mail. Par défaut `true` |
+| `SITEPING_REDACT_QUERY_STRINGS` | non | Retirer les paramètres des URL. Par défaut `false` |
 
 Le serveur a besoin de la politique `apiKey` : il s'authentifie avec `Authorization: Bearer <apiKey>`, ce qui donne aussi à ses réponses le rôle `team`. La clé autorise tous les changements de statut et toutes les suppressions sur l'endpoint : gardez-la dans la configuration de votre agent, jamais dans un fichier commité — les exemples ci-dessous la lisent depuis votre shell.
 
@@ -85,6 +88,10 @@ SITEPING_PROJECT = "my-project"
 
 Tout autre client MCP qui lance des serveurs stdio fonctionne de la même façon : lancez `npx -y @siteping/mcp` avec les trois variables définies.
 
+### Masquage
+
+Tout ce que renvoie un outil passe par le même masquage que l'[export](/fr/docs/dashboard#export) du dashboard — éléments de liste, rapports, légende de la capture, confirmations et messages d'erreur : jetons et clés d'API (y compris dans les URL) et adresses e-mail par défaut, paramètres d'URL si `SITEPING_REDACT_QUERY_STRINGS` est activé. Les variables `SITEPING_REDACT_*` acceptent `true`/`false` (ou `1`/`0`, `yes`/`no`, `on`/`off`). Un argument d'outil peut demander plus de masquage, jamais moins.
+
 ## Outils
 
 | Outil | Ce qu'il fait |
@@ -117,10 +124,10 @@ Les descriptions des outils indiquent à l'agent la marche à suivre — lister,
 |---|---|---|
 | `id` | — | Requis |
 | `format` | `"prompt"` | `prompt`, `markdown`, `text` ou `json` — le même rapport que l'[export](/fr/docs/dashboard#export) du dashboard |
-| `redact_emails` | `true` | Remplacer les adresses e-mail par `[email]` |
-| `redact_query_strings` | `false` | Retirer les paramètres des URL |
+| `redact_emails` | — | Masquer aussi les e-mails, si `SITEPING_REDACT_EMAILS` est désactivé |
+| `redact_query_strings` | — | Retirer aussi les paramètres d'URL, si `SITEPING_REDACT_QUERY_STRINGS` est désactivé |
 
-Les jetons et clés d'API sont toujours masqués. Le résultat indique aussi si une capture existe et rappelle à l'agent de répondre et de résoudre une fois le travail fait. L'API HTTP n'a pas de route pour un seul feedback : `get_feedback` et `get_screenshot` cherchent l'id dans la liste, du plus récent au plus ancien, et un feedback plus ancien que les 5 000 plus récents n'est pas trouvé.
+Le [masquage](#masquage) du serveur s'applique quels que soient les arguments. Le résultat indique aussi si une capture existe et rappelle à l'agent de répondre et de résoudre une fois le travail fait. L'API HTTP n'a pas de route pour un seul feedback : `get_feedback` et `get_screenshot` cherchent l'id dans la liste, du plus récent au plus ancien, et un feedback plus ancien que les 5 000 plus récents n'est pas trouvé.
 
 ### `get_screenshot`
 

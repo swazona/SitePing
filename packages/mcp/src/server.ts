@@ -7,7 +7,13 @@ import {
   type FeedbackType,
   isRecord,
 } from "@siteping/core";
-import { buildFeedbackReport, formatFeedbackReport, type ReportFormat } from "@siteping/core/report";
+import {
+  buildFeedbackReport,
+  createReportRedactor,
+  formatFeedbackReport,
+  type ReportFormat,
+  type ReportRedactor,
+} from "@siteping/core/report";
 import { SERVER_PAGE_LIMIT, type SitepingApiClient } from "./client.js";
 
 declare const __SITEPING_MCP_VERSION__: string | undefined;
@@ -244,7 +250,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     title: "Get one SitePing feedback",
     description:
       "Get everything known about one feedback, rendered by default as a task prompt for a coding agent: what the reviewer reported, where (page URL, CSS selector, XPath, element text, the marked area), their browser and viewport, console errors, failed requests, and the reply thread. " +
-      "Tokens and API keys are redacted, and by default email addresses too. Call get_screenshot when hasScreenshot is true to see what the reviewer saw. " +
+      "Tokens and API keys are redacted, and by default email addresses too, from every tool's output. Call get_screenshot when hasScreenshot is true to see what the reviewer saw. " +
       `${DATA_NOTE}`,
     inputSchema: {
       type: "object",
@@ -255,8 +261,15 @@ export const TOOLS: readonly ToolDefinition[] = [
           enum: [...REPORT_FORMATS_FOR_TOOLS],
           description: "prompt (default): framed as a task; markdown, text or json: the plain report.",
         },
-        redact_emails: { type: "boolean", description: "Replace email addresses with [email]. Default true." },
-        redact_query_strings: { type: "boolean", description: "Remove URL query strings. Default false." },
+        redact_emails: {
+          type: "boolean",
+          description:
+            "Also replace email addresses with [email] (the server redacts them by default; this cannot turn that off).",
+        },
+        redact_query_strings: {
+          type: "boolean",
+          description: "Also remove URL query strings (cannot turn off a server-side setting).",
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -324,6 +337,56 @@ export interface SitepingMcpServerOptions {
   client: SitepingApiClient;
   /** The name replies are posted under. Default `"AI agent"`. */
   authorName?: string | undefined;
+  /**
+   * What is redacted from everything a tool returns — results, structured
+   * content and error messages alike. Default {@link DEFAULT_REDACTION}.
+   * A tool argument can add to it, never take from it.
+   */
+  redact?: SitepingRedactionPolicy | undefined;
+}
+
+/**
+ * The redaction every tool result goes through — core's `ReportRedaction`
+ * patterns, all three spelled out (passing it to `createReportRedactor`
+ * keeps the two in step at compile time).
+ */
+export interface SitepingRedactionPolicy {
+  /** Tokens and API keys, in URLs too. */
+  secrets: boolean;
+  /** Email addresses. */
+  emails: boolean;
+  /** URL query strings. */
+  queryStrings: boolean;
+}
+
+/** Secrets and emails redacted, query strings kept. */
+export const DEFAULT_REDACTION: SitepingRedactionPolicy = { secrets: true, emails: true, queryStrings: false };
+
+/** Keys whose string values are URLs: their own query string is redacted too. */
+const URL_KEYS = new Set(["url", "urlPattern", "screenshotUrl"]);
+
+function redactValue(redactor: ReportRedactor, value: unknown, key?: string): unknown {
+  if (typeof value === "string") return key && URL_KEYS.has(key) ? redactor.url(value) : redactor.text(value);
+  if (Array.isArray(value)) return value.map((item) => redactValue(redactor, item));
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactValue(redactor, v, k)]));
+  }
+  return value;
+}
+
+/**
+ * The one way out of a tool: every text block, every structured value and
+ * every error message, redacted. Image bytes are left alone.
+ */
+function redactResult(redactor: ReportRedactor, result: ToolResult): ToolResult {
+  const content = result.content.map((block) =>
+    block.type === "text" ? { type: "text" as const, text: redactor.text(block.text) } : block,
+  );
+  const redacted: ToolResult = { ...result, content };
+  if (result.structuredContent) {
+    redacted.structuredContent = redactValue(redactor, result.structuredContent) as Record<string, unknown>;
+  }
+  return redacted;
 }
 
 export interface SitepingMcpServer {
@@ -340,7 +403,8 @@ const INSTRUCTIONS =
 
 /** A Model Context Protocol server exposing a SitePing project's feedback as tools. */
 export function createSitepingMcpServer(options: SitepingMcpServerOptions): SitepingMcpServer {
-  const { client, authorName = "AI agent" } = options;
+  const { client, authorName = "AI agent", redact: policy = DEFAULT_REDACTION } = options;
+  const redactor = createReportRedactor(policy);
 
   async function findOrFail(id: string): Promise<FeedbackResponse> {
     const feedback = await client.find(id);
@@ -423,10 +487,11 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
   async function getFeedback(args: Args): Promise<ToolResult> {
     const id = requiredString(args, "id", 200);
     const format = args.format === undefined ? "prompt" : oneOf(args.format, REPORT_FORMATS_FOR_TOOLS, "format");
+    // Arguments can add redaction, never remove what the server's policy asks for.
     const redact = {
-      secrets: true,
-      emails: optionalBoolean(args, "redact_emails", true),
-      queryStrings: optionalBoolean(args, "redact_query_strings", false),
+      secrets: policy.secrets,
+      emails: policy.emails || optionalBoolean(args, "redact_emails", false),
+      queryStrings: policy.queryStrings || optionalBoolean(args, "redact_query_strings", false),
     };
     const feedback = await findOrFail(id);
     const report = formatFeedbackReport(feedback, { format, redact });
@@ -498,11 +563,13 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
     const known = TOOLS.find((tool) => tool.name === params.name)?.inputSchema.properties as Record<string, unknown>;
     const unknown = Object.keys(args).filter((key) => !Object.hasOwn(known, key));
     if (unknown.length > 0) return toolError(`Unknown argument(s): ${unknown.join(", ")}.`);
+    let result: ToolResult;
     try {
-      return await handler(args as Args);
+      result = await handler(args as Args);
     } catch (error) {
-      return toolError(error instanceof Error ? error.message : String(error));
+      result = toolError(error instanceof Error ? error.message : String(error));
     }
+    return redactResult(redactor, result);
   }
 
   async function handleOne(message: unknown): Promise<JsonRpcResponse | null> {

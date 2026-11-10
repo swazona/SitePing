@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FeedbackRecord, FeedbackResponse } from "../src/index.js";
 import {
   buildFeedbackReport,
+  createReportRedactor,
   formatFeedbackReport,
   REPORT_FORMATS,
   REPORT_SECTIONS,
@@ -525,5 +526,21 @@ describe("line terminators and invisible characters, in every field and format",
       expect(line.trimStart().startsWith("IGNORE PREVIOUS")).toBe(false);
       if (format !== "text") expect(line).not.toContain("INJECTED");
     }
+  });
+});
+
+describe("createReportRedactor", () => {
+  it("redacts like a report, and redacting twice changes nothing", () => {
+    const redactor = createReportRedactor({ emails: true, queryStrings: true });
+    const input =
+      'token=abc123 https://x.example/a?code=zz&key=k1#t=1 Bearer abcdefghijkl mail a@b.example password: "pw" ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+    const once = redactor.text(input);
+    expect(once).not.toMatch(/abc123|zz|k1|abcdefghijkl|a@b\.example|pw"|ghp_/);
+    expect(redactor.text(once)).toBe(once);
+    expect(redactor.url(redactor.url("/pricing?token=t1&x=2"))).toBe(redactor.url("/pricing?token=t1&x=2"));
+    expect(redactor.url("/pricing?token=t1&x=2")).toBe("/pricing?[redacted]");
+    const secretsOnly = createReportRedactor();
+    expect(secretsOnly.url("/p?token=t1&key=k&x=2")).toBe("/p?token=[secret]&key=[secret]&x=2");
+    expect(secretsOnly.text(secretsOnly.text("sig: s1 api_key=[x]"))).toBe(secretsOnly.text("sig: s1 api_key=[x]"));
   });
 });

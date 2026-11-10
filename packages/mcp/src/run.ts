@@ -18,7 +18,7 @@ export async function runCli({ env, input, output, errors, fetch }: RunCliOption
   try {
     const config = readConfigFromEnv(env);
     const client = createSitepingApiClient({ ...config, fetch });
-    const server = createSitepingMcpServer({ client, authorName: config.authorName });
+    const server = createSitepingMcpServer({ client, authorName: config.authorName, redact: config.redact });
     await serveStdio(server, { input, output });
     return 0;
   } catch (error) {

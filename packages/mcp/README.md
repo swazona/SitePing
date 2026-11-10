@@ -18,6 +18,7 @@ Node ≥ 22, stdio transport, no dependencies.
 | `SITEPING_API_KEY` | The handler's `apiKey` — keep it out of committed files |
 | `SITEPING_PROJECT` | The widget's `projectName` |
 | `SITEPING_AUTHOR_NAME` | Optional: the name replies are posted under (default `AI agent`) |
+| `SITEPING_REDACT_SECRETS` / `_EMAILS` / `_QUERY_STRINGS` | Optional: what is redacted from every tool's output (default `true` / `true` / `false`) |
 
 ### Claude Code
 

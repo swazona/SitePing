@@ -234,10 +234,11 @@ const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
 /** `token=…`, `"password": "…"`, `X-Api-Key: …` — the name is kept, the value goes. */
 const SECRET_ASSIGNMENT =
-  /\b([A-Za-z0-9_-]*(?:api[_-]?key|apikey|token|secret|password|passwd|pwd|session[_-]?id|signature|credential|private[_-]?key)["']?)(\s*[=:]\s*["']?)([^\s"'&;,)}\]]+)/gi;
+  /\b([A-Za-z0-9_-]*(?:api[_-]?key|apikey|token|secret|password|passwd|pwd|session[_-]?id|signature|credential|private[_-]?key)["']?)(\s*[=:]\s*["']?)(?!\[(?:secret|redacted|email)\])([^\s"'&;,)}\]]+)/gi;
 
+/** (Both skip a value that is already a placeholder, so redacting twice changes nothing.) */
 /** URL parameters too generic to match in prose: `?code=`, `&key=`, `&sig=`, `&auth=`. */
-const SECRET_PARAM = /([?&](?:code|key|sig|auth)=)([^&#\s"'<>]+)/gi;
+const SECRET_PARAM = /([?&](?:code|key|sig|auth)=)(?!\[(?:secret|redacted|email)\])([^&#\s"'<>]+)/gi;
 
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s"'<>`]+/gi;
 
@@ -279,6 +280,24 @@ function createRedactor(redaction: ReportRedaction = {}): Redactor {
     url: (value) => text(queryStrings ? stripQuery(value) : value),
     blanks: (field) => blanked.has(field),
   };
+}
+
+/** A redactor for values outside a report: what `createReportRedactor` returns. */
+export interface ReportRedactor {
+  /** Free text: line terminators normalized, invisible characters out, then the requested patterns. */
+  text(value: string): string;
+  /** A URL: as `text`, its own query string included when `queryStrings` is on. */
+  url(value: string): string;
+}
+
+/**
+ * The formatter's pattern redaction (secrets, emails, query strings — not
+ * `fields`, which name report fields), for values a caller returns outside a
+ * report, such as a list of feedbacks. Same defaults: secrets on, the rest off.
+ */
+export function createReportRedactor(redaction: Omit<ReportRedaction, "fields"> = {}): ReportRedactor {
+  const { text, url } = createRedactor(redaction);
+  return { text, url };
 }
 
 // ---------------------------------------------------------------------------

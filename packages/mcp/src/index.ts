@@ -14,9 +14,16 @@ export type {
   JsonRpcSuccess,
   SitepingMcpServer,
   SitepingMcpServerOptions,
+  SitepingRedactionPolicy,
   ToolDefinition,
   ToolResult,
 } from "./server.js";
-export { createSitepingMcpServer, MCP_PROTOCOL_VERSIONS, SITEPING_MCP_VERSION, TOOLS } from "./server.js";
+export {
+  createSitepingMcpServer,
+  DEFAULT_REDACTION,
+  MCP_PROTOCOL_VERSIONS,
+  SITEPING_MCP_VERSION,
+  TOOLS,
+} from "./server.js";
 export type { StdioStreams } from "./stdio.js";
 export { serveStdio } from "./stdio.js";

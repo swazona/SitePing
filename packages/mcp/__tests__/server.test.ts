@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSitepingApiClient,
   createSitepingMcpServer,
+  DEFAULT_REDACTION,
   type JsonRpcResponse,
   MCP_PROTOCOL_VERSIONS,
   readConfigFromEnv,
   type SitepingMcpServer,
+  type SitepingRedactionPolicy,
   serveStdio,
   type TOOLS,
   type ToolResult,
@@ -32,7 +34,7 @@ interface Seed {
 let seq = 0;
 
 /** An in-process @siteping/server over a MemoryStore, plus a fetch that routes to it. */
-function stack() {
+function stack(redact?: SitepingRedactionPolicy) {
   const store = new MemoryStore();
   const handler = createSitepingHandler({ store, apiKey: API_KEY });
   const requests: Request[] = [];
@@ -100,7 +102,7 @@ function stack() {
   }
 
   const client = createSitepingApiClient({ endpoint: ENDPOINT, apiKey: API_KEY, projectName: PROJECT, fetch: fetchFn });
-  const server = createSitepingMcpServer({ client, authorName: "Claude" });
+  const server = createSitepingMcpServer({ client, authorName: "Claude", ...(redact ? { redact } : {}) });
   return { store, handler, fetchFn, requests, seed, client, server };
 }
 
@@ -399,8 +401,8 @@ describe("get_feedback", () => {
     expect(result.structuredContent).toMatchObject({ id, type: "bug", status: "open", author: { email: "[email]" } });
   });
 
-  it("renders the other formats and keeps emails on request", async () => {
-    const { server, seed } = stack();
+  it("renders the other formats, emails kept when the server's policy keeps them", async () => {
+    const { server, seed } = stack({ ...DEFAULT_REDACTION, emails: false });
     const id = await seed({
       message: "Broken",
       url: "https://site.example/a?token=abc&ref=x",
@@ -572,7 +574,7 @@ describe("configuration", () => {
         SITEPING_PROJECT: "p",
         SITEPING_AUTHOR_NAME: "Bot",
       }),
-    ).toEqual({ endpoint: ENDPOINT, apiKey: "k", projectName: "p", authorName: "Bot" });
+    ).toEqual({ endpoint: ENDPOINT, apiKey: "k", projectName: "p", authorName: "Bot", redact: DEFAULT_REDACTION });
     expect(readConfigFromEnv({ SITEPING_URL: ENDPOINT, SITEPING_API_KEY: "k", SITEPING_PROJECT: "p" }).authorName).toBe(
       "AI agent",
     );
@@ -592,5 +594,98 @@ describe("configuration", () => {
     expect(parseSince("2W", now)).toBe(now - 14 * 86_400_000);
     expect(parseSince("2026-07-01", now)).toBe(Date.UTC(2026, 6, 1));
     expect(() => parseSince("July", now)).toThrow("ISO 8601");
+  });
+});
+
+describe("redaction of every tool's output", () => {
+  const TOKEN = "sekr3t-value";
+  const EMAIL = "bob@corp.example";
+
+  async function seeded(policy?: SitepingRedactionPolicy) {
+    const env = stack(policy);
+    const id = await env.seed({
+      message: `Checkout fails, mail me at ${EMAIL}`,
+      url: `https://site.example/pricing?token=${TOKEN}&ref=mail`,
+      at: "2026-07-01T10:00:00Z",
+      screenshotDataUrl: `data:image/png;base64,${PNG}`,
+    });
+    return { ...env, id };
+  }
+
+  function expectClean(result: ToolResult) {
+    const raw = JSON.stringify(result);
+    expect(raw).not.toContain(TOKEN);
+    expect(raw).not.toContain(EMAIL);
+    expect(raw).not.toContain("alice@client.example");
+  }
+
+  it("redacts a URL token and an email from list_feedback, text and structured", async () => {
+    const { server } = await seeded();
+    const result = await call(server, "list_feedback");
+    expectClean(result);
+    const [item] = (result.structuredContent as { feedbacks: Array<{ url: string; message: string }> }).feedbacks;
+    expect(item?.url).toBe("https://site.example/pricing?token=[secret]&ref=mail");
+    expect(item?.message).toBe("Checkout fails, mail me at [email]");
+    expect(JSON.parse(textOf(result)).feedbacks[0]).toEqual(item);
+  });
+
+  it.each(["prompt", "markdown", "text", "json"])(
+    "redacts get_feedback in %s, an argument unable to undo it",
+    async (format) => {
+      const { server, id } = await seeded();
+      expectClean(await call(server, "get_feedback", { id, format }));
+      expectClean(await call(server, "get_feedback", { id, format, redact_emails: false }));
+    },
+  );
+
+  it("redacts get_screenshot, update_status and add_reply", async () => {
+    const { server, id } = await seeded();
+    const shot = await call(server, "get_screenshot", { id });
+    expect(shot.content[0]).toEqual({ type: "image", data: PNG, mimeType: "image/png" });
+    expectClean(shot);
+    expect(textOf(shot)).toContain("?token=[secret]&ref=mail");
+    expectClean(await call(server, "update_status", { id, status: "in_progress" }));
+    expectClean(await call(server, "add_reply", { id, body: `Thanks, replied to ${EMAIL}` }));
+  });
+
+  it("redacts error messages too", async () => {
+    const { server } = await seeded();
+    const result = await call(server, "get_feedback", { id: `token=${TOKEN}` });
+    expect(result.isError).toBe(true);
+    expectClean(result);
+    expect(textOf(result)).toContain("token=[secret]");
+  });
+
+  it("follows the configured policy", async () => {
+    const strict = await seeded({ secrets: true, emails: true, queryStrings: true });
+    const list = await call(strict.server, "list_feedback");
+    expect((list.structuredContent as { feedbacks: Array<{ url: string }> }).feedbacks[0]?.url).toBe(
+      "https://site.example/pricing?[redacted]",
+    );
+    expect(textOf(await call(strict.server, "get_feedback", { id: strict.id, format: "json" }))).toContain(
+      "pricing?[redacted]",
+    );
+
+    const lax = await seeded({ secrets: false, emails: false, queryStrings: false });
+    const raw = JSON.stringify(await call(lax.server, "list_feedback"));
+    expect(raw).toContain(TOKEN);
+    expect(raw).toContain(EMAIL);
+    // An argument still adds what the policy leaves out.
+    const added = await call(lax.server, "get_feedback", { id: lax.id, format: "json", redact_emails: true });
+    expect(textOf(added)).not.toContain(EMAIL);
+  });
+
+  it("reads the policy from the environment, safe by default", () => {
+    const base = { SITEPING_URL: ENDPOINT, SITEPING_API_KEY: "k", SITEPING_PROJECT: "p" };
+    expect(readConfigFromEnv(base).redact).toEqual({ secrets: true, emails: true, queryStrings: false });
+    expect(
+      readConfigFromEnv({
+        ...base,
+        SITEPING_REDACT_SECRETS: "0",
+        SITEPING_REDACT_EMAILS: "no",
+        SITEPING_REDACT_QUERY_STRINGS: "TRUE",
+      }).redact,
+    ).toEqual({ secrets: false, emails: false, queryStrings: true });
+    expect(() => readConfigFromEnv({ ...base, SITEPING_REDACT_EMAILS: "maybe" })).toThrow("SITEPING_REDACT_EMAILS");
   });
 });

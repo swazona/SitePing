@@ -17,6 +17,9 @@ Three environment variables:
 | `SITEPING_API_KEY` | yes | The handler's [`apiKey`](/docs/server#options) |
 | `SITEPING_PROJECT` | yes | The widget's `projectName` |
 | `SITEPING_AUTHOR_NAME` | no | The name replies are posted under. Default `AI agent` |
+| `SITEPING_REDACT_SECRETS` | no | Redact tokens and API keys. Default `true` |
+| `SITEPING_REDACT_EMAILS` | no | Redact email addresses. Default `true` |
+| `SITEPING_REDACT_QUERY_STRINGS` | no | Remove URL query strings. Default `false` |
 
 The server needs the `apiKey` policy: it authenticates with `Authorization: Bearer <apiKey>`, which is also what grants its replies the `team` role. The key authorizes every status change and delete on the endpoint, so keep it in your agent's configuration, never in a committed file — the snippets below read it from your shell.
 
@@ -85,6 +88,10 @@ SITEPING_PROJECT = "my-project"
 
 Any other MCP client that starts stdio servers works the same way: run `npx -y @siteping/mcp` with the three variables set.
 
+### Redaction
+
+Everything a tool returns goes through the same redaction as the dashboard's [Export](/docs/dashboard#export) — list items, reports, the screenshot caption, confirmations and error messages: tokens and API keys (in URLs too) and email addresses by default, query strings when `SITEPING_REDACT_QUERY_STRINGS` is on. The `SITEPING_REDACT_*` flags take `true`/`false` (or `1`/`0`, `yes`/`no`, `on`/`off`). A tool argument can ask for more redaction, never less.
+
 ## Tools
 
 | Tool | What it does |
@@ -117,10 +124,10 @@ The tool descriptions tell the agent the workflow — list, read, fix in the cod
 |---|---|---|
 | `id` | — | Required |
 | `format` | `"prompt"` | `prompt`, `markdown`, `text` or `json` — the same report as the dashboard's [Export](/docs/dashboard#export) |
-| `redact_emails` | `true` | Replace email addresses with `[email]` |
-| `redact_query_strings` | `false` | Remove URL query strings |
+| `redact_emails` | — | Also redact emails, if `SITEPING_REDACT_EMAILS` is off |
+| `redact_query_strings` | — | Also remove query strings, if `SITEPING_REDACT_QUERY_STRINGS` is off |
 
-Tokens and API keys are always redacted. The result also says whether a screenshot exists and reminds the agent to reply and resolve once it is done. The HTTP API has no route for one feedback, so `get_feedback`, `get_screenshot` look the id up in the list, newest first: a feedback older than the 5,000 most recent is not found.
+The server's [redaction](#redaction) applies whatever the arguments say. The result also says whether a screenshot exists and reminds the agent to reply and resolve once it is done. The HTTP API has no route for one feedback, so `get_feedback`, `get_screenshot` look the id up in the list, newest first: a feedback older than the 5,000 most recent is not found.
 
 ### `get_screenshot`
 
