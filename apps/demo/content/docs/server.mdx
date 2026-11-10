@@ -100,7 +100,60 @@ app.all("/api/siteping", express.raw({ type: () => true, limit: "4mb" }), async 
 });
 ```
 
-Rate limiting is not handled here: apply it in your framework or reverse proxy, on `POST` above all — the widget calls it from anonymous browsers.
+Rate limiting is off by default: apply it in your framework or reverse proxy, on `POST` above all — the widget calls it from anonymous browsers — or turn on the built-in [`rateLimit`](#rate-limiting).
+
+## Rate limiting
+
+`rateLimit` counts requests per client and answers `429 Too Many Requests`, with a `Retry-After` header in seconds, past a limit. `POST` (feedback and replies, what anonymous visitors send) counts against `create`, `GET`, `PATCH` and `DELETE` against `other`; a bucket you leave out is unlimited, and `OPTIONS` never counts. A request over its limit is refused before anything else runs, its body unread.
+
+```ts
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  allowedOrigins: ["https://acme.com"],
+  rateLimit: {
+    ipHeader: "x-forwarded-for", // the header your proxy sets
+    create: { limit: 10, windowMs: 60_000 },
+    other: { limit: 120, windowMs: 60_000, algorithm: "sliding" },
+  },
+});
+```
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `create` | `{ limit, windowMs, algorithm? }` | — | Limit of `POST`: at most `limit` requests per `windowMs` milliseconds and client. Both must be positive integers |
+| `other` | `{ limit, windowMs, algorithm? }` | — | The same for `GET`, `PATCH` and `DELETE` |
+| `algorithm` | `"fixed" \| "sliding"` | `"fixed"` | `fixed` counts in consecutive windows, so a client can send up to twice `limit` around a window's end. `sliding` also weighs the previous window by how much of it still falls within the last `windowMs`, for one more read per request |
+| `ipHeader` | `string` | — | Request header holding the client's IP, as set by your proxy: `x-forwarded-for`, `x-real-ip`, `cf-connecting-ip`, `fly-client-ip`… Only its **last** comma-separated entry is read, the one the closest proxy appended: a client can prepend anything to `x-forwarded-for`, but not that. A request without the header is not limited |
+| `key` | `(request, bucket) => string \| null` | — | Count requests under your own key instead: a session, an API token, an IP your platform hands over. `null` or `undefined` leaves the request unlimited |
+| `store` | `SitepingRateLimitStore` | in memory | Where the counters live |
+
+One of `ipHeader` or `key` is required, and invalid limits throw `CONFIG_RATE_LIMIT_INVALID` when the handler is created. Name a header your proxy sets or overwrites on every request: one it passes through untouched is the client's to choose, a fresh limit each time. Behind two proxies that both append to `x-forwarded-for`, the last entry is your own first proxy, which every client shares: read the right entry with `key`.
+
+Refused requests count too, so a client that keeps sending stays refused. When the CORS allowlist admits the origin, the `429` carries the CORS headers and `Access-Control-Expose-Headers: Retry-After`, so the widget's origin can read both. If counting fails (a shared store down), the request goes through and the failure is logged: an outage of the counters never takes the API down.
+
+### Several instances
+
+The default store keeps the counters in the server process's memory, which suits one long-running server. Serverless functions and clusters each count on their own, so a client gets `limit` per instance: pass a shared `store`. It is two calls, `increment(key, ttlMs)`, which adds one and returns the new count of a counter that expires `ttlMs` after it was created, and `get(key)`. With Redis:
+
+```ts
+import { createClient } from "redis";
+import type { SitepingRateLimitStore } from "@siteping/server";
+
+const redis = await createClient({ url: process.env.REDIS_URL }).connect();
+
+const store: SitepingRateLimitStore = {
+  async increment(key, ttlMs) {
+    const [count] = await redis.multi().incr(key).pExpire(key, ttlMs, "NX").exec();
+    return Number(count);
+  },
+  async get(key) {
+    return Number((await redis.get(key)) ?? 0);
+  },
+};
+```
+
+`createMemoryRateLimitStore()` is the default store, exported for tests and to wrap.
 
 ## Options
 
@@ -120,6 +173,8 @@ Rate limiting is not handled here: apply it in your framework or reverse proxy, 
 | `beforeComment` | `(input, context) => input` | — | The same for a [thread](/docs/comments) reply |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transform each record before it is sent |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
+| `notifyReporter` | `(feedback, event, context) => void` | — | Tell a feedback's reporter that it was resolved or reopened, or that the team replied — see [notifying the reporter](#notifying-the-reporter) |
+| `rateLimit` | `SitepingRateLimitOptions` | — | Per-client limits answering `429` — see [rate limiting](#rate-limiting) |
 | `logger` | `{ error(message, context) }` | `console.error` | Where unexpected failures go, with the request's method and path — and for a failed hook, the feedback or deletion it concerns. Webhook failures go to their own [`onError`](#webhooks) instead. A logger that throws or rejects falls back to `console.error`. It is a `SitepingLogger`: the same object, with a `warn` method too (`console`, winston…), serves the stores and screenshot storages, which report degraded cases through `warn` |
 | `describeError` | `(error) => string \| undefined` | — | The message of a `500` instead of `"Internal server error"`, e.g. a "run your migrations" hint. Never return the error's own details |
 
@@ -147,6 +202,8 @@ createSitepingHandler({
 | `CONFIG_OWNERSHIP_CHECK_MISSING` | `access.authorize` over a store without `verifyProjectOwnership` |
 | `CONFIG_WEBHOOK_TIMEOUT_INVALID` | A webhook `timeoutMs` no timer holds (the message names the webhook by its origin only) |
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` without `apiKey`, `access` or `requireAuthForDestructive: false` |
+| `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` without `ipHeader` or `key`, or a `limit` or `windowMs` that is not a positive integer |
+| `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` over a store with threads that does not implement `addCommentIfAbsent` |
 
 ## The security model, honestly
 
@@ -572,6 +629,46 @@ createSitepingHandler({
 These callbacks get `{ request, principal }` as their context; `principal` is `null` under the `apiKey` policy. Hooks written as class methods keep their `this`.
 
 To keep one GitHub or GitLab issue per feedback, closed and reopened along with it, [`@siteping/integration-issues`](/docs/issue-trackers) builds these hooks for you.
+
+### Notifying the reporter
+
+`notifyReporter(feedback, event, context)` is called when the person who sent a feedback would want to know: it was closed (`{ type: "resolved", status }`, `status` being `resolved` or `wont_fix`), a closed feedback was opened again (`{ type: "reopened", status }`), or the team answered on its [thread](/docs/comments) (`{ type: "replied", comment }`, only for a stored comment with the `team` role, once per reply). It receives the stored record, `authorEmail` included, which may be empty. The library sends nothing itself and depends on no mail library: send an email, a push or a chat message from it. With [nodemailer](https://nodemailer.com):
+
+```ts
+import nodemailer from "nodemailer";
+
+const mail = nodemailer.createTransport(process.env.SMTP_URL);
+
+const subjects = {
+  resolved: "Your feedback was resolved",
+  reopened: "Your feedback was reopened",
+  replied: "The team answered your feedback",
+} as const;
+
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  async notifyReporter(feedback, event) {
+    if (!feedback.authorEmail) return;
+    await mail.sendMail({
+      from: "SitePing <feedback@acme.com>",
+      to: feedback.authorEmail,
+      subject: subjects[event.type],
+      // Plain text: the message and the reply were typed by visitors and the team, not by you.
+      text:
+        event.type === "replied"
+          ? `${event.comment.authorName} answered:\n\n${event.comment.body}`
+          : `"${feedback.message}" is now ${event.status}.`,
+    });
+  },
+});
+```
+
+- **When it fires.** A PATCH first reads the feedback with the store's `getFeedback`, when it has one ([memory](/docs/adapters/memory) does), and only a change that crosses between open and closed, or changes the close reason, notifies: `open` → `in_progress` does not. A store without `getFeedback` keeps no previous status to compare with, so every PATCH to `resolved` or `wont_fix` notifies `resolved`, every PATCH to `open` notifies `reopened`, and one to `in_progress` nothing. A reply's feedback is read with `getFeedback` too, else found among its project's 1,000 newest feedbacks; one older than that is logged and not notified.
+- **Latency and failures.** It is awaited before the response, after the hooks, like them: a slow SMTP server holds the dashboard's request. A throw is logged as `[siteping] Hook notifyReporter failed` and never fails the request. To answer at once, hand the delivery to `waitUntil` (or a queue) yourself and return.
+- **Replies need `addCommentIfAbsent`.** A store with threads that cannot tell a new reply from a retried one would email on every retry, so the handler refuses to start (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Every bundled store implements it.
+- **Tracker syncs.** A status changed from GitHub, Linear, Jira or Plane through the [issue tracker webhooks](/docs/issue-trackers#two-way-sync) does not go through the handler: pass the same function to their `onStatusSynced`.
+- **Spoofed addresses.** `authorEmail` is what the widget sent, which anonymous visitors type. Whatever you email to it, the visitor chose the recipient: keep the content to their own feedback, never anything another reviewer wrote that they could not already see.
 
 ## HTTP reference
 

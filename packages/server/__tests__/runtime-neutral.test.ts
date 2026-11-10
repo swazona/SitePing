@@ -153,10 +153,11 @@ describe("@siteping/server outside Node", () => {
     expect(() => server.createSitepingHandler({ store: arrayStore() })).not.toThrow();
   });
 
-  it("exports only the handler, webhook dispatch, the event list, the protocol version and the config error guard as values: schemas and payload builders stay internal", () => {
+  it("exports only the handler, webhook dispatch, the event list, the protocol version, the config error guard and the in-memory rate-limit store as values: schemas and payload builders stay internal", () => {
     expect(Object.keys(server).sort()).toEqual([
       "SITEPING_PROTOCOL_VERSION",
       "WEBHOOK_EVENTS",
+      "createMemoryRateLimitStore",
       "createSitepingHandler",
       "dispatchWebhook",
       "dispatchWebhooks",

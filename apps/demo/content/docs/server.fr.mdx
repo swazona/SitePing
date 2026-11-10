@@ -100,7 +100,60 @@ app.all("/api/siteping", express.raw({ type: () => true, limit: "4mb" }), async 
 });
 ```
 
-La limitation de débit n'est pas gérée ici : appliquez-la dans votre framework ou votre reverse proxy, sur le `POST` avant tout — le widget l'appelle depuis des navigateurs anonymes.
+La limitation de débit est désactivée par défaut : appliquez-la dans votre framework ou votre reverse proxy, sur le `POST` avant tout — le widget l'appelle depuis des navigateurs anonymes —, ou activez le [`rateLimit`](#limitation-de-débit) intégré.
+
+## Limitation de débit
+
+`rateLimit` compte les requêtes par client et répond `429 Too Many Requests`, avec un en-tête `Retry-After` en secondes, au-delà d'une limite. Le `POST` (feedbacks et réponses, ce qu'envoient les visiteurs anonymes) compte pour `create`, `GET`, `PATCH` et `DELETE` pour `other` ; un compartiment omis n'est pas limité, et `OPTIONS` ne compte jamais. Une requête au-delà de sa limite est refusée avant tout le reste, sans lire son corps.
+
+```ts
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  allowedOrigins: ["https://acme.com"],
+  rateLimit: {
+    ipHeader: "x-forwarded-for", // l'en-tête que pose votre proxy
+    create: { limit: 10, windowMs: 60_000 },
+    other: { limit: 120, windowMs: 60_000, algorithm: "sliding" },
+  },
+});
+```
+
+| Option | Type | Défaut | Ce que ça fait |
+|---|---|---|---|
+| `create` | `{ limit, windowMs, algorithm? }` | — | Limite du `POST` : au plus `limit` requêtes par `windowMs` millisecondes et par client. Les deux doivent être des entiers positifs |
+| `other` | `{ limit, windowMs, algorithm? }` | — | La même chose pour `GET`, `PATCH` et `DELETE` |
+| `algorithm` | `"fixed" \| "sliding"` | `"fixed"` | `fixed` compte par fenêtres consécutives : un client peut envoyer jusqu'à deux fois `limit` autour de la fin d'une fenêtre. `sliding` pondère aussi la fenêtre précédente selon la part qui tombe encore dans les dernières `windowMs`, pour une lecture de plus par requête |
+| `ipHeader` | `string` | — | En-tête de requête portant l'IP du client, posé par votre proxy : `x-forwarded-for`, `x-real-ip`, `cf-connecting-ip`, `fly-client-ip`… Seule sa **dernière** entrée (séparées par des virgules) est lue, celle qu'a ajoutée le proxy le plus proche : un client peut préfixer n'importe quoi à `x-forwarded-for`, pas cela. Une requête sans l'en-tête n'est pas limitée |
+| `key` | `(request, bucket) => string \| null` | — | Compter sous votre propre clé : une session, un jeton d'API, une IP fournie par votre plateforme. `null` ou `undefined` laisse la requête sans limite |
+| `store` | `SitepingRateLimitStore` | en mémoire | Où vivent les compteurs |
+
+`ipHeader` ou `key` est obligatoire, et des limites invalides lèvent `CONFIG_RATE_LIMIT_INVALID` à la création du handler. Nommez un en-tête que votre proxy pose ou écrase à chaque requête : un en-tête qu'il laisse passer tel quel, le client le choisit, et obtient une limite neuve à chaque valeur. Derrière deux proxys qui ajoutent chacun à `x-forwarded-for`, la dernière entrée est votre premier proxy, partagé par tous les clients : lisez la bonne entrée avec `key`.
+
+Les requêtes refusées comptent aussi : un client qui insiste reste refusé. Quand la liste blanche CORS admet l'origine, la `429` porte les en-têtes CORS et `Access-Control-Expose-Headers: Retry-After`, pour que l'origine du widget lise les deux. Si le comptage échoue (un store partagé en panne), la requête passe et l'échec est journalisé : une panne des compteurs ne fait jamais tomber l'API.
+
+### Plusieurs instances
+
+Le store par défaut garde les compteurs dans la mémoire du processus, ce qui convient à un serveur qui tourne en continu. Les fonctions serverless et les clusters comptent chacun de leur côté : un client obtient `limit` par instance. Passez un `store` partagé. Il tient en deux appels, `increment(key, ttlMs)`, qui ajoute un et renvoie le nouveau total d'un compteur expirant `ttlMs` après sa création, et `get(key)`. Avec Redis :
+
+```ts
+import { createClient } from "redis";
+import type { SitepingRateLimitStore } from "@siteping/server";
+
+const redis = await createClient({ url: process.env.REDIS_URL }).connect();
+
+const store: SitepingRateLimitStore = {
+  async increment(key, ttlMs) {
+    const [count] = await redis.multi().incr(key).pExpire(key, ttlMs, "NX").exec();
+    return Number(count);
+  },
+  async get(key) {
+    return Number((await redis.get(key)) ?? 0);
+  },
+};
+```
+
+`createMemoryRateLimitStore()` est le store par défaut, exporté pour les tests et pour l'envelopper.
 
 ## Options
 
@@ -120,6 +173,8 @@ La limitation de débit n'est pas gérée ici : appliquez-la dans votre framewor
 | `beforeComment` | `(input, context) => input` | — | La même chose pour une réponse d'un [fil](/fr/docs/comments) |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transformer chaque enregistrement avant son envoi |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
+| `notifyReporter` | `(feedback, event, context) => void` | — | Prévenir l'auteur d'un feedback qu'il a été résolu ou rouvert, ou que l'équipe a répondu — voir [prévenir l'auteur](#prévenir-lauteur) |
+| `rateLimit` | `SitepingRateLimitOptions` | — | Limites par client qui répondent `429` — voir [limitation de débit](#limitation-de-débit) |
 | `logger` | `{ error(message, context) }` | `console.error` | Où vont les échecs inattendus, avec la méthode et le chemin de la requête — et pour un hook en échec, le feedback ou la suppression qu'il concerne. Les échecs de webhook vont plutôt à leur propre [`onError`](#webhooks). Un logger qui lève ou rejette se rabat sur `console.error`. C'est un `SitepingLogger` : le même objet, doté aussi d'une méthode `warn` (`console`, winston…), sert les stores et les stockages de captures, qui signalent les cas dégradés via `warn` |
 | `describeError` | `(error) => string \| undefined` | — | Le message d'une `500` au lieu de `"Internal server error"`, par exemple une indication « lancez vos migrations ». Ne renvoyez jamais les détails de l'erreur elle-même |
 
@@ -147,6 +202,8 @@ createSitepingHandler({
 | `CONFIG_OWNERSHIP_CHECK_MISSING` | `access.authorize` sur un store sans `verifyProjectOwnership` |
 | `CONFIG_WEBHOOK_TIMEOUT_INVALID` | Un `timeoutMs` de webhook qu'aucun minuteur ne tient (le message ne nomme le webhook que par son origine) |
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` sans `apiKey`, `access` ni `requireAuthForDestructive: false` |
+| `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` sans `ipHeader` ni `key`, ou un `limit` ou `windowMs` qui n'est pas un entier positif |
+| `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` sur un store à fils qui n'implémente pas `addCommentIfAbsent` |
 
 ## Le modèle de sécurité, franchement
 
@@ -572,6 +629,46 @@ createSitepingHandler({
 Ces callbacks reçoivent `{ request, principal }` comme contexte ; `principal` vaut `null` sous la politique `apiKey`. Les hooks écrits comme méthodes de classe gardent leur `this`.
 
 Pour garder un ticket GitHub ou GitLab par feedback, fermé et rouvert avec lui, [`@siteping/integration-issues`](/fr/docs/issue-trackers) construit ces hooks pour vous.
+
+### Prévenir l'auteur
+
+`notifyReporter(feedback, event, context)` est appelé quand la personne qui a envoyé un feedback voudrait le savoir : il a été fermé (`{ type: "resolved", status }`, `status` valant `resolved` ou `wont_fix`), un feedback fermé a été rouvert (`{ type: "reopened", status }`), ou l'équipe a répondu sur son [fil](/fr/docs/comments) (`{ type: "replied", comment }`, seulement pour un commentaire enregistré avec le rôle `team`, une fois par réponse). Il reçoit l'enregistrement stocké, `authorEmail` compris, qui peut être vide. La bibliothèque n'envoie rien elle-même et ne dépend d'aucune bibliothèque d'e-mail : envoyez un e-mail, une notification push ou un message de chat depuis cette fonction. Avec [nodemailer](https://nodemailer.com) :
+
+```ts
+import nodemailer from "nodemailer";
+
+const mail = nodemailer.createTransport(process.env.SMTP_URL);
+
+const subjects = {
+  resolved: "Votre retour a été traité",
+  reopened: "Votre retour a été rouvert",
+  replied: "L'équipe a répondu à votre retour",
+} as const;
+
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  async notifyReporter(feedback, event) {
+    if (!feedback.authorEmail) return;
+    await mail.sendMail({
+      from: "SitePing <feedback@acme.com>",
+      to: feedback.authorEmail,
+      subject: subjects[event.type],
+      // Texte brut : le message et la réponse ont été tapés par des visiteurs et l'équipe, pas par vous.
+      text:
+        event.type === "replied"
+          ? `${event.comment.authorName} a répondu :\n\n${event.comment.body}`
+          : `« ${feedback.message} » est maintenant ${event.status}.`,
+    });
+  },
+});
+```
+
+- **Quand il se déclenche.** Un PATCH lit d'abord le feedback avec le `getFeedback` du store, quand il en a un ([memory](/fr/docs/adapters/memory) l'a), et seul un changement qui passe entre ouvert et fermé, ou change la raison de fermeture, notifie : `open` → `in_progress` ne notifie pas. Un store sans `getFeedback` ne garde aucun statut précédent à comparer : chaque PATCH vers `resolved` ou `wont_fix` notifie `resolved`, chaque PATCH vers `open` notifie `reopened`, et un PATCH vers `in_progress` rien. Le feedback d'une réponse est lu avec `getFeedback` aussi, sinon cherché parmi les 1 000 feedbacks les plus récents de son projet ; un plus ancien est journalisé et pas notifié.
+- **Latence et échecs.** Il est attendu avant la réponse, après les hooks, comme eux : un serveur SMTP lent retient la requête du tableau de bord. Une exception est journalisée sous `[siteping] Hook notifyReporter failed` et ne fait jamais échouer la requête. Pour répondre tout de suite, confiez l'envoi à `waitUntil` (ou à une file) vous-même et rendez la main.
+- **Les réponses demandent `addCommentIfAbsent`.** Un store à fils incapable de distinguer une nouvelle réponse d'un renvoi enverrait un e-mail à chaque renvoi : le handler refuse de démarrer (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Tous les stores fournis l'implémentent.
+- **Synchronisations depuis un tracker.** Un statut changé depuis GitHub, Linear, Jira ou Plane par les [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) ne passe pas par le handler : passez la même fonction à leur `onStatusSynced`.
+- **Adresses usurpées.** `authorEmail` est ce que le widget a envoyé, saisi par des visiteurs anonymes. Quoi que vous y envoyiez, c'est le visiteur qui a choisi le destinataire : limitez le contenu à son propre feedback, jamais à ce qu'un autre relecteur a écrit et qu'il ne pouvait pas déjà voir.
 
 ## Référence HTTP
 

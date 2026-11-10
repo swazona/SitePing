@@ -121,7 +121,9 @@ export type SitepingConfigErrorCode =
   | "CONFIG_MAX_BODY_BYTES_INVALID"
   | "CONFIG_OWNERSHIP_CHECK_MISSING"
   | "CONFIG_WEBHOOK_TIMEOUT_INVALID"
-  | "CONFIG_API_KEY_REQUIRED";
+  | "CONFIG_API_KEY_REQUIRED"
+  | "CONFIG_RATE_LIMIT_INVALID"
+  | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED";
 
 /**
  * Thrown by `createSitepingHandler` while it is created, never per request,

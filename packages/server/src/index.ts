@@ -38,8 +38,16 @@ export type {
   SitepingLifecycleHooks,
   SitepingPrincipal,
   SitepingProjectContext,
+  SitepingReporterEvent,
   SitepingRequestContext,
 } from "./options.js";
+export {
+  createMemoryRateLimitStore,
+  type SitepingRateLimitBucket,
+  type SitepingRateLimitOptions,
+  type SitepingRateLimitRule,
+  type SitepingRateLimitStore,
+} from "./rate-limit.js";
 export type { FeedbackDeleteInput, FeedbackPatchInput, GetQueryInput, ValidationIssue } from "./validation.js";
 export type {
   DiscordWebhookPayload,

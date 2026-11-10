@@ -1,8 +1,9 @@
 import { isStoreNotFound, type SitepingStore, toFeedbackUpdate } from "@siteping/core";
 import { ERROR_MESSAGES } from "../constants.js";
 import type { Notify } from "../notify.js";
-import type { SitepingLifecycleHooks } from "../options.js";
+import type { SitepingHandlerBaseOptions, SitepingLifecycleHooks } from "../options.js";
 import type { Pipeline } from "../pipeline.js";
+import { statusEvent } from "../reporter.js";
 import { feedbackPatchSchema } from "../validation.js";
 
 interface UpdateFeedbackDependencies<Principal> {
@@ -10,6 +11,7 @@ interface UpdateFeedbackDependencies<Principal> {
   pipeline: Pipeline<Principal>;
   notify: Notify<Principal>;
   onUpdated: SitepingLifecycleHooks<Principal>["onUpdated"];
+  notifyReporter: SitepingHandlerBaseOptions<Principal>["notifyReporter"];
 }
 
 /** `PATCH` — change a feedback's status. */
@@ -18,6 +20,7 @@ export function updateFeedbackOperation<Principal>({
   pipeline,
   notify,
   onUpdated,
+  notifyReporter,
 }: UpdateFeedbackDependencies<Principal>) {
   return async (request: Request): Promise<Response> => {
     const entry = await pipeline.enter(request, "PATCH");
@@ -41,6 +44,9 @@ export function updateFeedbackOperation<Principal>({
         return pipeline.error(scope, 404, ERROR_MESSAGES.feedbackNotFound);
       }
 
+      // Read only to tell the reporter whether the status really changes.
+      const previous = notifyReporter && store.getFeedback ? ((await store.getFeedback(id))?.status ?? null) : null;
+
       // resolvedAt is the CLOSURE timestamp — set when the feedback enters
       // a terminal status (resolved / wont_fix), cleared otherwise. The
       // derivation lives here at the edge; stores persist what they're given.
@@ -51,6 +57,11 @@ export function updateFeedbackOperation<Principal>({
       if (onUpdated) {
         const subject = { feedbackId: feedback.id, projectName: feedback.projectName };
         await pipeline.runHook(scope, "onUpdated", subject, () => onUpdated(feedback, scope.context));
+      }
+      const event = notifyReporter ? statusEvent(feedback.status, previous) : null;
+      if (notifyReporter && event) {
+        const subject = { feedbackId: feedback.id, projectName: feedback.projectName, event: event.type };
+        await pipeline.runHook(scope, "notifyReporter", subject, () => notifyReporter(feedback, event, scope.context));
       }
 
       // PATCH can be made public via publicEndpoints / requireAuthForDestructive:

@@ -48,6 +48,8 @@ describe("isSitepingConfigError", () => {
       | "CONFIG_OWNERSHIP_CHECK_MISSING"
       | "CONFIG_WEBHOOK_TIMEOUT_INVALID"
       | "CONFIG_API_KEY_REQUIRED"
+      | "CONFIG_RATE_LIMIT_INVALID"
+      | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED"
     >();
     if (isSitepingConfigError(thrown)) {
       expectTypeOf(thrown.code).toEqualTypeOf<SitepingConfigErrorCode>();
