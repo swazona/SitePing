@@ -65,6 +65,7 @@ interface JiraIssue {
     status?: JiraStatus;
     resolution?: { name?: string } | null;
     labels?: string[];
+    project?: { key?: string };
   };
 }
 
@@ -74,7 +75,7 @@ interface JiraTransition {
   to?: JiraStatus;
 }
 
-const ISSUE_FIELDS = ["description", "status", "resolution", "labels"];
+const ISSUE_FIELDS = ["description", "status", "resolution", "labels", "project"];
 
 /** The status category each feedback status moves a Jira issue into, best first. */
 const CATEGORIES: Record<FeedbackStatus, readonly string[]> = {
@@ -142,6 +143,10 @@ export function createJiraTracker({
   });
   const browseUrl = (key: string) => `${site}/browse/${encodeURIComponent(key)}`;
 
+  /** Whether the issue is in `projectKey`: another project's issue is not ours, whatever label and marker it carries. */
+  const inProject = (issue: JiraIssue): boolean =>
+    issue.fields.project?.key?.toUpperCase() === projectKey.toUpperCase();
+
   const toTrackedIssue = (issue: JiraIssue): TrackedIssue => {
     const done = issue.fields.status?.statusCategory?.key === JIRA_STATUS_CATEGORY.done;
     const resolution = issue.fields.resolution?.name;
@@ -169,7 +174,8 @@ export function createJiraTracker({
           ...(nextPageToken ? { nextPageToken } : {}),
         },
       });
-      issues.push(...answer.issues);
+      // The JQL scopes to the project already; checked again on what comes back.
+      issues.push(...answer.issues.filter(inProject));
       if (answer.isLast !== false && !answer.nextPageToken) return { issues, truncated: false };
       nextPageToken = answer.nextPageToken ?? undefined;
       if (!nextPageToken) return { issues, truncated: false };
@@ -283,7 +289,7 @@ export function createJiraTracker({
         throw error;
       }
       const labelled = (issue.fields.labels ?? []).some((label) => label.toLowerCase() === SITEPING_ISSUE_LABEL);
-      return labelled ? toTrackedIssue(issue) : null;
+      return labelled && inProject(issue) ? toTrackedIssue(issue) : null;
     },
   };
 }

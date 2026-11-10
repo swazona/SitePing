@@ -241,6 +241,23 @@ for (const testCase of cases) {
       expect(await statusOf(store, feedback.id)).toBe("in_progress");
     });
 
+    it("never lets an issue of another team or project change a feedback, label and marker notwithstanding", async () => {
+      const { store, handle, feedback, issue, fake } = await setup();
+      const tracker = testCase.createTracker(fake);
+      const update = vi.spyOn(store, "updateFeedback");
+      // Same `siteping` label, same valid marker, but it lives elsewhere in the tracker.
+      issue.scope = testCase.name === "Jira" ? "OTHER" : "foreign-scope";
+      issue.stateKind = testCase.kinds.resolved;
+
+      const response = await handle(await testCase.stateChange(issue.key, true));
+
+      expect(await response.json()).toEqual({ result: "ignored", reason: "not an issue state change" });
+      expect(update).not.toHaveBeenCalled();
+      expect(await statusOf(store, feedback.id)).toBe("open");
+      expect(await tracker.getIssue(issue.key)).toBeNull();
+      expect((await tracker.findSitepingIssues(`"id":"${feedback.id}"`)).issues).toEqual([]);
+    });
+
     it("ignores an issue of another instance", async () => {
       const { store, handle, feedback, issue } = await setup({ instance: "staging" });
       issue.stateKind = testCase.kinds.resolved;
@@ -447,6 +464,20 @@ describe("GitHub webhook", () => {
     await send(event({}, { labels: [{ name: "bug" }] }));
     await send(event({ action: "labeled" }));
 
+    expect(await statusOf(store, feedback.id)).toBe("open");
+  });
+
+  it("never lets another repository's labelled, marked issue change a feedback", async () => {
+    const { store, feedback, event, send } = await setup();
+    const update = vi.spyOn(store, "updateFeedback");
+
+    for (const full_name of ["evil/site", "acme/site-fork", "acme/site/x", ""]) {
+      const response = await send(event({ repository: { full_name } }));
+      expect(await response.json()).toEqual({ result: "ignored", reason: "not an issue state change" });
+    }
+    await send(event({ repository: undefined }));
+
+    expect(update).not.toHaveBeenCalled();
     expect(await statusOf(store, feedback.id)).toBe("open");
   });
 

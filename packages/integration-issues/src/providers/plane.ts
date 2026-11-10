@@ -55,6 +55,9 @@ interface PlaneWorkItem {
   description_html?: string | null;
   state?: string | null;
   labels?: string[];
+  /** The work item's project id (`project` in v1 answers; `project_id` accepted too). */
+  project?: string | null;
+  project_id?: string | null;
 }
 
 /** One page of a list endpoint: Plane paginates with cursors, and some endpoints answer a bare array. */
@@ -172,6 +175,9 @@ export function createPlaneTracker({
     };
   };
 
+  /** Whether the work item is in `projectId`: another project's is not ours, whatever label and marker it carries. */
+  const inProject = (item: PlaneWorkItem): boolean => (item.project ?? item.project_id) === projectId;
+
   const sitepingLabelId = async (): Promise<string> => (await resolveLabels([SITEPING_ISSUE_LABEL]))[0] as string;
 
   return {
@@ -227,7 +233,7 @@ export function createPlaneTracker({
         { order_by: "-created_at" },
       );
       const label = await sitepingLabelId();
-      const labelled = items.filter((item) => (item.labels ?? []).includes(label));
+      const labelled = items.filter((item) => inProject(item) && (item.labels ?? []).includes(label));
       const issues = await Promise.all(labelled.map(toTrackedIssue));
       return { issues: issues.filter((issue) => issue.body.includes(marker)), truncated };
     },
@@ -240,6 +246,7 @@ export function createPlaneTracker({
         if (isIssueTrackerRequestError(error) && error.status === 404) return null;
         throw error;
       }
+      if (!inProject(item)) return null;
       return (item.labels ?? []).includes(await sitepingLabelId()) ? toTrackedIssue(item) : null;
     },
   };

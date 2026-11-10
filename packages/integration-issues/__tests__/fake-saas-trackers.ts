@@ -17,6 +17,8 @@ export interface SaasIssue {
   /** Jira only: the resolution of a done issue. */
   resolution?: string | null;
   comments: unknown[];
+  /** The issue's team id (Linear), project key (Jira) or project id (Plane), when not the fake's own. */
+  scope?: string;
 }
 
 export interface SaasFake {
@@ -74,6 +76,7 @@ export function createFakeLinear(teamId = "team-1"): SaasFake & { labelCatalog: 
     description: issue.description,
     state: { type: issue.stateKind },
     labels: { nodes: issue.labels.map((id) => ({ name: labelCatalog.get(id) })) },
+    team: { id: issue.scope ?? teamId },
   });
   const find = (id: string) => issues.find((issue) => issue.key === id);
 
@@ -197,6 +200,7 @@ export function createFakeJira(projectKey = "WEB"): SaasFake {
     status: { name: statusOf(issue), statusCategory: { key: issue.stateKind } },
     resolution: issue.resolution ? { name: issue.resolution } : null,
     labels: issue.labels,
+    project: { key: issue.scope ?? projectKey },
   });
 
   const server = base((request, body: any, route) => {
@@ -309,6 +313,7 @@ export function createFakePlane(
     description_html: issue.description,
     state: stateId(issue.stateKind),
     labels: issue.labels,
+    project: issue.scope ?? projectId,
   });
   const page = <Item>(items: Item[], url: URL) => {
     const perPage = Number(url.searchParams.get("per_page") ?? 100);

@@ -48,6 +48,7 @@ interface LinearIssue {
   description: string | null;
   state: { type: string } | null;
   labels: { nodes: Array<{ name: string }> };
+  team: { id: string } | null;
 }
 
 interface Connection<Node> {
@@ -55,7 +56,7 @@ interface Connection<Node> {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
 }
 
-const ISSUE_FIELDS = "id url description state { type } labels { nodes { name } }";
+const ISSUE_FIELDS = "id url description state { type } labels { nodes { name } } team { id }";
 
 /** The state type each feedback status moves a Linear issue to, best first. */
 const STATE_TYPES: Record<FeedbackStatus, readonly string[]> = {
@@ -196,7 +197,8 @@ export function createLinearTracker({
           after,
         },
       );
-      issues.push(...data.issues.nodes);
+      // The filter scopes to the team already; checked again so no other team's issue ever counts.
+      issues.push(...data.issues.nodes.filter((issue) => issue.team?.id === teamId));
       if (!data.issues.pageInfo.hasNextPage) return { issues, truncated: false };
       after = data.issues.pageInfo.endCursor;
     }
@@ -292,7 +294,9 @@ export function createLinearTracker({
         if (Array.isArray(messages) && messages.some((message) => /not found/i.test(String(message)))) return null;
         throw error;
       }
-      return data.issue && hasSitepingLabel(data.issue) ? toTrackedIssue(data.issue) : null;
+      // Another team's issue is not ours, whatever label and marker it carries.
+      const { issue } = data;
+      return issue && issue.team?.id === teamId && hasSitepingLabel(issue) ? toTrackedIssue(issue) : null;
     },
   };
 }
