@@ -59,6 +59,18 @@ export const ko: Translations = {
   "fab.messages": "사이드바 보기",
   "fab.annotate": "새 주석 만들기",
   "fab.annotations": "마커 보이기 또는 숨기기",
+  "fab.flowStart": "흐름 시작",
+  "fab.flowFinish": "흐름 종료",
+
+  // Multi-page flow strip
+  "flow.aria": "여러 페이지에 걸친 흐름",
+  "flow.titleLabel": "흐름 이름",
+  "flow.titlePlaceholder": "선택 사항, 예: 회원가입",
+  "flow.start": "시작",
+  "flow.label": "흐름: {title} · {step}단계",
+  "flow.labelUntitled": "흐름 · {step}단계",
+  "flow.finish": "종료",
+  "flow.finished": "흐름을 종료했습니다",
 
   // Annotator
   "annotator.instruction":

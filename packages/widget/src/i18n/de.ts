@@ -60,6 +60,18 @@ export const de: Translations = {
   "fab.messages": "Seitenleiste anzeigen",
   "fab.annotate": "Neue Anmerkung erstellen",
   "fab.annotations": "Markierungen ein- oder ausblenden",
+  "fab.flowStart": "Ablauf starten",
+  "fab.flowFinish": "Ablauf beenden",
+
+  // Multi-page flow strip
+  "flow.aria": "Seitenübergreifender Ablauf",
+  "flow.titleLabel": "Name des Ablaufs",
+  "flow.titlePlaceholder": "Optional, z. B. Registrierung",
+  "flow.start": "Starten",
+  "flow.label": "Ablauf: {title} · Schritt {step}",
+  "flow.labelUntitled": "Ablauf · Schritt {step}",
+  "flow.finish": "Beenden",
+  "flow.finished": "Ablauf beendet",
 
   // Annotator
   "annotator.instruction":

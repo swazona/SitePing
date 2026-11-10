@@ -91,6 +91,8 @@ export interface WidgetEvents {
   "panel:action-error": [Error];
   "annotations:toggle": [boolean];
   "panel:toggle": [boolean];
+  /** The FAB's flow item: start a multi-page flow, or finish the active one. */
+  "flow:toggle": [];
 }
 
 // NOTE: the public event surface is `SitepingPublicEvents` from

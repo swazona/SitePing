@@ -833,6 +833,85 @@ describe("Fab", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Multi-page flow item
+// ---------------------------------------------------------------------------
+
+describe("Fab flow item", () => {
+  let shadow: ShadowRoot;
+  let bus: EventBus<WidgetEvents>;
+  let fab: Fab;
+  const t = createT("en");
+
+  beforeEach(() => {
+    shadow = createShadowRoot();
+    bus = new EventBus<WidgetEvents>();
+    fab = new Fab(shadow, defaultConfig(), bus, t);
+  });
+
+  afterEach(() => {
+    fab.destroy();
+    shadow.host.remove();
+  });
+
+  const ids = () => getRadialItems(shadow).map((btn) => btn.dataset.itemId);
+  const flowItem = () => shadow.querySelector<HTMLButtonElement>('[data-item-id="flow"]');
+
+  it("is left out until the endpoint is known to keep flows, then follows the pencil — once", () => {
+    expect(flowItem()).toBeNull();
+
+    fab.setFlowAvailable();
+    fab.setFlowAvailable();
+
+    expect(ids()).toEqual(["chat", "annotate", "flow", "toggle-annotations"]);
+    expect(flowItem()!.getAttribute("role")).toBe("menuitem");
+    expect(flowItem()!.getAttribute("aria-label")).toBe(t("fab.flowStart"));
+    expect(getRadialItems(shadow).map((btn) => btn.style.getPropertyValue("--sp-i"))).toEqual(["0", "1", "2", "3"]);
+  });
+
+  it("is the last item when the markers toggle is off", () => {
+    fab.destroy();
+    fab = new Fab(shadow, { ...defaultConfig(), showAnnotationsToggle: false }, bus, t);
+    fab.setFlowAvailable();
+    expect(ids()).toEqual(["chat", "annotate", "flow"]);
+  });
+
+  it("takes its place in an open menu, and in its keyboard cycle", () => {
+    const fabBtn = shadow.querySelector<HTMLButtonElement>(".sp-fab")!;
+    fabBtn.click();
+    fab.setFlowAvailable();
+
+    expect(flowItem()!.classList.contains("sp-radial-item--open")).toBe(true);
+    shadow.querySelector<HTMLButtonElement>('[data-item-id="annotate"]')!.focus();
+    shadow
+      .querySelector('[role="menu"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(shadow.activeElement).toBe(flowItem());
+  });
+
+  it("emits flow:toggle and closes the menu on click", () => {
+    const listener = vi.fn();
+    bus.on("flow:toggle", listener);
+    fab.setFlowAvailable();
+    shadow.querySelector<HTMLButtonElement>(".sp-fab")!.click();
+
+    flowItem()!.click();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(shadow.querySelector(".sp-fab")!.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("reads 'Finish the flow' while one is active", () => {
+    fab.setFlowAvailable();
+    fab.setFlowActive(true);
+    expect(flowItem()!.getAttribute("aria-label")).toBe(t("fab.flowFinish"));
+    expect(flowItem()!.querySelector(".sp-radial-label")!.textContent).toBe(t("fab.flowFinish"));
+
+    fab.setFlowActive(false);
+    expect(flowItem()!.getAttribute("aria-label")).toBe(t("fab.flowStart"));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Touch screens and phones
 // ---------------------------------------------------------------------------
 

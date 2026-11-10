@@ -407,6 +407,27 @@ describe("StoreClient", () => {
       const response = await client.sendFeedback(samplePayload);
       expect(response.screenshotRegion).toBeNull();
     });
+
+    it("forwards a flow step's flowId, flowStep and flowTitle, and returns them", async () => {
+      const flow = { flowId: "flow-1", flowStep: 2, flowTitle: "Sign-up" };
+      vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord(flow));
+
+      const response = await client.sendFeedback({ ...samplePayload, ...flow });
+      const input = vi.mocked(store.createFeedback).mock.calls[0]![0] as FeedbackCreateInput;
+
+      expect(input).toMatchObject(flow);
+      expect(response).toMatchObject(flow);
+    });
+
+    it("sends null flow fields outside a flow, and reads a record without them as outside one", async () => {
+      vi.mocked(store.createFeedback).mockResolvedValue(makeFeedbackRecord());
+
+      const response = await client.sendFeedback(samplePayload);
+      const input = vi.mocked(store.createFeedback).mock.calls[0]![0] as FeedbackCreateInput;
+
+      expect(input).toMatchObject({ flowId: null, flowStep: null, flowTitle: null });
+      expect(response).toMatchObject({ flowId: null, flowStep: null, flowTitle: null });
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -435,6 +456,14 @@ describe("StoreClient", () => {
       await client.getFeedbacks("my-project", { statuses: ["open", "in_progress"] });
 
       expect(store.getFeedbacks).toHaveBeenCalledWith(expect.objectContaining({ statuses: ["open", "in_progress"] }));
+    });
+
+    it("passes the flowId filter through to the store", async () => {
+      vi.mocked(store.getFeedbacks).mockResolvedValue({ feedbacks: [], total: 0 });
+
+      await client.getFeedbacks("my-project", { flowId: "flow-1" });
+
+      expect(store.getFeedbacks).toHaveBeenCalledWith(expect.objectContaining({ flowId: "flow-1" }));
     });
 
     it("handles missing options", async () => {

@@ -276,10 +276,17 @@ export interface Translations {
     "fab.annotations": string;
     "fab.aria": string;
     "fab.badge": string;
+    "fab.flowFinish": string;
     "fab.messages": string;
     "feedback.deleted.confirmation": string;
     "feedback.error.message": string;
     "feedback.sent.confirmation": string;
+    "flow.aria": string;
+    "flow.finish": string;
+    "flow.labelUntitled": string;
+    "flow.start": string;
+    "flow.titleLabel": string;
+    "flow.titlePlaceholder": string;
     "group.byPage": string;
     "group.feedbacks": string;
     "identity.cancel": string;
@@ -363,8 +370,11 @@ export interface Translations {
     "panel.notOnPage": string;
     "comments.full": string;
     "comments.title": string;
+    "flow.finished": string;
     "comments.team": string;
     "detail.closedAt": string;
+    "fab.flowStart": string;
+    "flow.label": string;
 }
 
 export function initSiteping(config: SitepingConfig): SitepingInstance;

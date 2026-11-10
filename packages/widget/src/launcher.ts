@@ -2,8 +2,11 @@ import {
   canonicalizeLocale,
   type DiagnosticsSnapshot,
   type FeedbackPayload,
+  FLOW_TITLE_MAX_LENGTH,
   IDENTITY_FIELD_MAX_LENGTH,
   isValidEmail,
+  MAX_FLOW_STEPS,
+  newClientId,
   type PageScope,
   type SitepingConfig,
   type SitepingIdentity,
@@ -18,6 +21,8 @@ import { ConsoleBuffer } from "./diagnostics/console-buffer.js";
 import { NetworkBuffer } from "./diagnostics/network-buffer.js";
 import { EventBus, type WidgetEvents } from "./events.js";
 import { Fab } from "./fab.js";
+import { type ActiveFlow, flowSession } from "./flow.js";
+import type { FlowStrip as FlowStripType } from "./flow-strip.js";
 import { createFocusTracker } from "./focus-tracker.js";
 import {
   addSurfaceKeydownListener,
@@ -25,7 +30,7 @@ import {
   isolateFromHost,
   registerEscapeLayer,
 } from "./host-isolation.js";
-import { createT, loadLocale, type TFunction } from "./i18n/index.js";
+import { createT, loadLocale, type TFunction, tWithParams } from "./i18n/index.js";
 import { getIdentity, saveIdentity } from "./identity.js";
 import { MarkerManager } from "./markers.js";
 import { ownFeedback } from "./own-feedback.js";
@@ -517,6 +522,64 @@ export function launch(config: SitepingConfig): SitepingInstance {
     }
   });
 
+  // Multi-page flow: while one is active, every comment sent is its next
+  // step. It lives in sessionStorage, so it follows the reviewer across
+  // reloads and page loads in this tab; SPA navigations need nothing more,
+  // as each step reads the page scope when it is sent. The strip and its
+  // form load lazily, on the first flow of the visit.
+  const flows = flowSession(config.projectName, config.endpoint);
+  let activeFlow: ActiveFlow | null = flows.read();
+  let flowStripPromise: Promise<FlowStripType | null> | null = null;
+  let flowStrip: FlowStripType | null = null;
+  const loadFlowStrip = (): Promise<FlowStripType | null> => {
+    flowStripPromise ??= Promise.all([import("./flow-strip.js"), localeReady]).then(([mod]) => {
+      if (destroyed) return null;
+      const deps = { t, tWithParams, registerEscapeLayer, maxTitleLength: FLOW_TITLE_MAX_LENGTH };
+      flowStrip = new mod.FlowStrip(shadow, deps, () => finishFlow());
+      return flowStrip;
+    });
+    return flowStripPromise;
+  };
+  const setActiveFlow = (flow: ActiveFlow | null): void => {
+    activeFlow = flow;
+    if (flow) flows.save(flow);
+    else flows.clear();
+    // An active flow keeps its item, to finish it, even on a server that
+    // reported no flows: one resumed from an earlier page, say.
+    if (flow) fab.setFlowAvailable();
+    fab.setFlowActive(flow !== null);
+    if (flow) flowStrip?.show(flow);
+    else flowStrip?.hide();
+  };
+  function finishFlow(): void {
+    if (!activeFlow) return;
+    setActiveFlow(null);
+    notify(t("flow.finished"), false);
+  }
+  async function startFlow(): Promise<void> {
+    const strip = await loadFlowStrip();
+    if (!strip || activeFlow) return;
+    const title = await strip.ask();
+    if (title === null || destroyed) return;
+    setActiveFlow({ id: newClientId(), title: title || null, step: 1 });
+    strip.focus();
+  }
+  bus.on("flow:toggle", () => {
+    if (activeFlow) finishFlow();
+    else startFlow().catch((err) => log("Failed to start a flow:", err));
+  });
+  if (activeFlow) {
+    const resumed = activeFlow;
+    setActiveFlow(resumed);
+    loadFlowStrip()
+      .then((strip) => {
+        if (strip && activeFlow === resumed) strip.show(resumed);
+      })
+      .catch((err) => log("Failed to resume the flow:", err));
+  }
+  // A store keeps whatever it is handed; a server keeps flows from protocol 2.
+  if (config.store) fab.setFlowAvailable();
+
   const annotator = new Annotator(colors, bus, t, config.enableScreenshot ?? false, () =>
     focusTracker.getLastPageFocus(),
   );
@@ -622,6 +685,10 @@ export function launch(config: SitepingConfig): SitepingInstance {
         };
       }
 
+      // The step this comment records, fixed now: finishing the flow while
+      // the send is in flight must not move it to another flow, or none.
+      const flow = activeFlow;
+
       const payload: FeedbackPayload = {
         projectName: config.projectName,
         type,
@@ -637,10 +704,19 @@ export function launch(config: SitepingConfig): SitepingInstance {
         screenshotDataUrl: screenshotDataUrl ?? null,
         screenshotRegion: screenshotRegion ?? null,
         diagnostics,
+        ...(flow ? { flowId: flow.id, flowStep: flow.step, flowTitle: flow.title } : {}),
+      };
+      // The next comment is the next step — once this one is stored, or saved
+      // for the next page load (the queue resends it with its flow fields).
+      const advanceFlow = (): void => {
+        if (!flow || activeFlow?.id !== flow.id) return;
+        if (flow.step >= MAX_FLOW_STEPS) finishFlow();
+        else setActiveFlow({ ...flow, step: flow.step + 1 });
       };
 
       try {
         const response = await client.sendFeedback(payload);
+        advanceFlow();
         bus.emit("feedback:sent", response);
         // Compare against the scope captured before submit (route may have
         // changed during the network round-trip — re-reading scope here
@@ -659,7 +735,10 @@ export function launch(config: SitepingConfig): SitepingInstance {
         // and the host still hears about the failure. Otherwise — refused,
         // or not even saved — the form stays for a retry.
         const queued = queueOutcome(error);
-        if (queued) bus.emit("feedback:queued");
+        if (queued) {
+          advanceFlow();
+          bus.emit("feedback:queued");
+        }
         bus.emit("feedback:error", error instanceof Error ? error : new Error(String(error)));
         notify(t(queued ? "feedback.queued" : "feedback.error.message"), !queued);
       }
@@ -684,8 +763,12 @@ export function launch(config: SitepingConfig): SitepingInstance {
   // this `Promise.all`, a fast HTTP response could outrun a slow locale chunk
   // and freeze marker labels in the English fallback for non-English locales.
   Promise.all([client.getFeedbacks(config.projectName, initialOptions), localeReady])
-    .then(([{ feedbacks }]) => {
-      if (destroyed || markerGeneration !== initialLoadGeneration) return;
+    .then(([{ feedbacks, protocol }]) => {
+      if (destroyed) return;
+      // Flows need a server that keeps them (protocol 2); an older one would
+      // store each step as an unrelated feedback.
+      if ((protocol ?? 0) >= 2) fab.setFlowAvailable();
+      if (markerGeneration !== initialLoadGeneration) return;
       // Defensive client-side filter — backend may not yet support the `url` query.
       const visible = scopeAnnotationsByUrl ? feedbacks.filter((f) => f.url === initialScope.url) : feedbacks;
       markers.render(visible);
@@ -851,6 +934,7 @@ export function launch(config: SitepingConfig): SitepingInstance {
       unsubAnnotation();
       unsubToggle();
       fab.destroy();
+      flowStrip?.destroy();
       panelInstance?.destroy();
       annotator.destroy();
       markers.destroy();

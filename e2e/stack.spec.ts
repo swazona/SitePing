@@ -225,6 +225,65 @@ test.describe("Widget against the real handler", () => {
   });
 });
 
+test.describe("Multi-page flow against the real handler", () => {
+  const stripText = (page: Page) =>
+    page.evaluate(() => {
+      const strip = document.querySelector("siteping-widget")?.shadowRoot?.querySelector<HTMLElement>(".sp-flow");
+      return strip && !strip.hidden ? strip.querySelector(":scope > .sp-flow-label")?.textContent : null;
+    });
+
+  test("a flow started on one page collects a step per page, across a page load and an SPA navigation", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const project = projectFor(testInfo);
+    await openWidgetPage(page, { project });
+
+    // The server speaks protocol 2: the FAB offers the flow, and asks for a title.
+    await clickInShadow(page, ".sp-fab");
+    await clickInShadow(page, '[data-item-id="flow"]');
+    await page.waitForFunction(
+      () => document.querySelector("siteping-widget")?.shadowRoot?.activeElement?.id === "sp-flow-title",
+    );
+    await page.keyboard.type("Sign-up");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => stripText(page)).toBe("Flow: Sign-up · step 1");
+
+    const first = await annotateAndSend(page, "The email step asks for too much");
+    expect(first.status()).toBe(201);
+    const flowId = (first.request().postDataJSON() as FeedbackPayload).flowId;
+    expect(flowId).toBeTruthy();
+
+    // A full page load: the flow comes back from sessionStorage, at its next step.
+    await page.goto(`${ORIGIN}/flow/2?${new URLSearchParams({ project })}`);
+    await expect.poll(() => stripText(page)).toBe("Flow: Sign-up · step 2");
+    expect((await annotateAndSend(page, "The code arrives late")).status()).toBe(201);
+
+    // An SPA navigation: the step carries the page it was sent from.
+    await page.evaluate((url) => history.pushState(null, "", url), `/flow/3?${new URLSearchParams({ project })}`);
+    expect((await annotateAndSend(page, "The welcome page shows the wrong name")).status()).toBe(201);
+    await expect.poll(() => stripText(page)).toBe("Flow: Sign-up · step 4");
+
+    // Escape on the strip finishes the flow.
+    await page.evaluate(() => {
+      const strip = document.querySelector("siteping-widget")?.shadowRoot?.querySelector(".sp-flow");
+      strip?.querySelector<HTMLButtonElement>("button.sp-btn-primary")?.focus();
+    });
+    await page.keyboard.press("Escape");
+    await expect.poll(() => stripText(page)).toBeNull();
+
+    const res = await request.get(`${API}?projectName=${encodeURIComponent(project)}&flowId=${flowId}`);
+    const steps = ((await res.json()) as FeedbackResponseList).feedbacks.sort(
+      (a, b) => (a.flowStep ?? 0) - (b.flowStep ?? 0),
+    );
+    expect(steps.map((s) => [s.flowStep, s.url, s.flowTitle])).toEqual([
+      [1, "/", "Sign-up"],
+      [2, "/flow/2", "Sign-up"],
+      [3, "/flow/3", "Sign-up"],
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Dashboard inbox → real handler
 // ---------------------------------------------------------------------------

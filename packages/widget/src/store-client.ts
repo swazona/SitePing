@@ -72,6 +72,9 @@ export class StoreClient implements WidgetClient {
         screenshotDataUrl: payload.screenshotDataUrl ?? null,
         screenshotRegion: payload.screenshotRegion ?? null,
         diagnostics: payload.diagnostics ?? null,
+        flowId: payload.flowId ?? null,
+        flowStep: payload.flowStep ?? null,
+        flowTitle: payload.flowTitle ?? null,
       });
     } catch (error) {
       if (!isStoreDuplicate(error)) throw error;
@@ -92,6 +95,7 @@ export class StoreClient implements WidgetClient {
       search: options?.search,
       url: options?.url,
       urlPattern: options?.urlPattern,
+      flowId: options?.flowId,
     });
 
     return { feedbacks: feedbacks.map(toResponse), total, capabilities: { comments: !!this.store.addComment } };
@@ -157,6 +161,9 @@ function toResponse(record: FeedbackRecord): FeedbackResponse {
     screenshotUrl: record.screenshotUrl ?? null,
     screenshotRegion: record.screenshotRegion ?? null,
     diagnostics: record.diagnostics ?? null,
+    flowId: record.flowId ?? null,
+    flowStep: record.flowStep ?? null,
+    flowTitle: record.flowTitle ?? null,
   };
 }
 

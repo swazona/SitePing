@@ -119,6 +119,20 @@ for (const theme of ["light", "dark"] as const) {
       expect.soft(await violations(page, WIDGET_SURFACES), "comment popup").toEqual([]);
     });
 
+    test("widget: the flow strip, asking a title and while a flow is active", async ({ page, browserName }) => {
+      const project = `axe-flow-strip-${theme}-${browserName}`;
+      await page.goto(`${ORIGIN}/?project=${project}&theme=${theme}`);
+      await page.locator(".sp-fab").click();
+      await page.locator('[data-item-id="flow"]').click();
+      await expect(page.locator(".sp-flow input")).toBeFocused();
+      expect.soft(await violations(page, WIDGET_SURFACES), "flow title form").toEqual([]);
+
+      await page.keyboard.type("Sign-up");
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".sp-flow > .sp-flow-label")).toHaveText("Flow: Sign-up · step 1");
+      expect.soft(await violations(page, WIDGET_SURFACES), "flow strip").toEqual([]);
+    });
+
     test("inbox: list and open feedback", async ({ page, browserName }) => {
       const project = `axe-inbox-${theme}-${browserName}`;
       await seedFeedback(page, project);

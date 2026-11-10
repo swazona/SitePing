@@ -59,6 +59,18 @@ export const ja: Translations = {
   "fab.messages": "サイドバーを表示",
   "fab.annotate": "新しい注釈を作成",
   "fab.annotations": "マーカーの表示を切り替え",
+  "fab.flowStart": "フローを開始",
+  "fab.flowFinish": "フローを終了",
+
+  // Multi-page flow strip
+  "flow.aria": "複数ページのフロー",
+  "flow.titleLabel": "フローの名前",
+  "flow.titlePlaceholder": "任意（例：会員登録）",
+  "flow.start": "開始",
+  "flow.label": "フロー：{title}・ステップ {step}",
+  "flow.labelUntitled": "フロー・ステップ {step}",
+  "flow.finish": "終了",
+  "flow.finished": "フローを終了しました",
 
   // Annotator
   "annotator.instruction":
