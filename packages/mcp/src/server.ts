@@ -66,6 +66,34 @@ export function parseErrorResponse(): JsonRpcFailure {
 
 type ContentBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 
+declare const SAFE: unique symbol;
+/**
+ * Text a tool may return: written by this server, every value in it
+ * redacted before it was put in (see `say` in the server) — or a constant.
+ * Only `trusted` and `say` make one, so a raw value can't slip into a result.
+ */
+type SafeText = string & { readonly [SAFE]: true };
+
+/**
+ * Text from constants only — schema keys, limits, enum lists. Never pass it
+ * anything a reviewer, a browser or the server supplied: use `say`.
+ */
+function trusted(strings: TemplateStringsArray, ...constants: ReadonlyArray<string | number>): SafeText {
+  return String.raw({ raw: strings }, ...constants) as SafeText;
+}
+
+/** What a tool builds: safe text, JSON values (redacted, then encoded), images. */
+type DraftBlock =
+  | { type: "text"; text: SafeText }
+  | { type: "json"; value: unknown }
+  | { type: "image"; data: string; mimeType: string };
+
+interface ToolDraft {
+  content: DraftBlock[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
+
 /** What `tools/call` resolves to. */
 export interface ToolResult {
   content: ContentBlock[];
@@ -88,34 +116,38 @@ export interface ToolDefinition {
 }
 
 /** A tool argument the model got wrong: reported as a tool error, so it can correct itself. */
-class ArgumentError extends Error {}
+class ArgumentError extends Error {
+  constructor(readonly safeMessage: SafeText) {
+    super(safeMessage);
+  }
+}
 
 type Args = Record<string, unknown>;
 
 function optionalString(args: Args, key: string, max = 2000): string | undefined {
   const value = args[key];
   if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string") throw new ArgumentError(`\`${key}\` must be a string.`);
-  if (value.length > max) throw new ArgumentError(`\`${key}\` is longer than ${max} characters.`);
+  if (typeof value !== "string") throw new ArgumentError(trusted`\`${key}\` must be a string.`);
+  if (value.length > max) throw new ArgumentError(trusted`\`${key}\` is longer than ${max} characters.`);
   return value;
 }
 
 function requiredString(args: Args, key: string, max?: number): string {
   const value = optionalString(args, key, max);
-  if (value === undefined || value.trim() === "") throw new ArgumentError(`\`${key}\` is required.`);
+  if (value === undefined || value.trim() === "") throw new ArgumentError(trusted`\`${key}\` is required.`);
   return value;
 }
 
 function optionalBoolean(args: Args, key: string, fallback: boolean): boolean {
   const value = args[key];
   if (value === undefined || value === null) return fallback;
-  if (typeof value !== "boolean") throw new ArgumentError(`\`${key}\` must be true or false.`);
+  if (typeof value !== "boolean") throw new ArgumentError(trusted`\`${key}\` must be true or false.`);
   return value;
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], key: string): T {
   if (typeof value === "string" && (allowed as readonly string[]).includes(value)) return value as T;
-  throw new ArgumentError(`\`${key}\` must be one of: ${allowed.join(", ")}.`);
+  throw new ArgumentError(trusted`\`${key}\` must be one of: ${allowed.join(", ")}.`);
 }
 
 /** `"7d"`, `"12h"`, `"30m"`, `"2w"` ago, or an ISO 8601 date — as epoch ms. */
@@ -130,7 +162,7 @@ export function parseSince(value: string, now = Date.now()): number {
   const absolute = Date.parse(value);
   if (!/^\d{4}-\d{2}-\d{2}/.test(value.trim()) || Number.isNaN(absolute)) {
     throw new ArgumentError(
-      "`since` must be an ISO 8601 date (2026-07-20, 2026-07-20T10:00:00Z) or a duration like 24h or 7d.",
+      trusted`\`since\` must be an ISO 8601 date (2026-07-20, 2026-07-20T10:00:00Z) or a duration like 24h or 7d.`,
     );
   }
   return absolute;
@@ -162,7 +194,7 @@ function decodeCursor(value: string): Cursor {
   } catch {
     // fall through
   }
-  throw new ArgumentError("`cursor` is not a cursor this server returned.");
+  throw new ArgumentError(trusted`\`cursor\` is not a cursor this server returned.`);
 }
 
 /** Server pages one `list_feedback` call reads at most (client-side filters). */
@@ -189,12 +221,8 @@ function summary(feedback: FeedbackResponse) {
   };
 }
 
-function text(value: string): ContentBlock {
-  return { type: "text", text: value };
-}
-
-function toolError(message: string): ToolResult {
-  return { content: [text(message)], isError: true };
+function toolError(message: SafeText): ToolDraft {
+  return { content: [{ type: "text", text: message }], isError: true };
 }
 
 const STATUS_LIST = FEEDBACK_STATUSES.join(", ");
@@ -374,19 +402,47 @@ function redactValue(redactor: ReportRedactor, value: unknown, key?: string): un
   return value;
 }
 
-/**
- * The one way out of a tool: every text block, every structured value and
- * every error message, redacted. Image bytes are left alone.
- */
-function redactResult(redactor: ReportRedactor, result: ToolResult): ToolResult {
-  const content = result.content.map((block) =>
-    block.type === "text" ? { type: "text" as const, text: redactor.text(block.text) } : block,
-  );
-  const redacted: ToolResult = { ...result, content };
-  if (result.structuredContent) {
-    redacted.structuredContent = redactValue(redactor, result.structuredContent) as Record<string, unknown>;
+/** Parse `value` as JSON, or `undefined`. */
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
   }
-  return redacted;
+}
+
+/**
+ * An error message from outside this server's control — the HTTP layer's
+ * `label: status body`, where the body is often JSON. A JSON tail is parsed,
+ * its values redacted, then encoded again: redacting the encoded form would
+ * let escaping (`\"`, `\n`) hide a value from the patterns.
+ */
+function redactMessage(redactor: ReportRedactor, message: string): SafeText {
+  const start = message.search(/[[{]/);
+  if (start !== -1) {
+    const parsed = parseJson(message.slice(start));
+    if (parsed !== undefined) {
+      return `${redactor.text(message.slice(0, start))}${JSON.stringify(redactValue(redactor, parsed))}` as SafeText;
+    }
+  }
+  return redactor.text(message) as SafeText;
+}
+
+/**
+ * The one way out of a tool. Structured content and JSON blocks are
+ * redacted as values, then encoded; text was redacted value by value when
+ * it was written (`say`); image bytes are left alone.
+ */
+function finalize(redactor: ReportRedactor, draft: ToolDraft): ToolResult {
+  const content: ContentBlock[] = draft.content.map((block) =>
+    block.type === "json" ? { type: "text", text: JSON.stringify(redactValue(redactor, block.value), null, 2) } : block,
+  );
+  const result: ToolResult = { content };
+  if (draft.structuredContent) {
+    result.structuredContent = redactValue(redactor, draft.structuredContent) as Record<string, unknown>;
+  }
+  if (draft.isError) result.isError = true;
+  return result;
 }
 
 export interface SitepingMcpServer {
@@ -406,20 +462,39 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
   const { client, authorName = "AI agent", redact: policy = DEFAULT_REDACTION } = options;
   const redactor = createReportRedactor(policy);
 
+  /** A URL to interpolate in `say`: its query string follows the policy too. */
+  const url = (value: string) => ({ url: value });
+  /** A value to interpolate in `say` in double quotes, redacted first, then quoted. */
+  const quoted = (value: string) => ({ quoted: value });
+  type Piece = string | number | { url: string } | { quoted: string };
+
+  /** Tool prose: every interpolated value redacted before it goes in. */
+  function say(strings: TemplateStringsArray, ...values: Piece[]): SafeText {
+    const pieces = values.map((value) =>
+      typeof value === "number"
+        ? String(value)
+        : typeof value === "string"
+          ? redactor.text(value)
+          : "url" in value
+            ? redactor.url(value.url)
+            : JSON.stringify(redactor.text(value.quoted)),
+    );
+    return String.raw({ raw: strings }, ...pieces) as SafeText;
+  }
+
   async function findOrFail(id: string): Promise<FeedbackResponse> {
     const feedback = await client.find(id);
-    if (!feedback)
-      throw new ArgumentError(`No feedback ${JSON.stringify(id)} in project ${JSON.stringify(client.projectName)}.`);
+    if (!feedback) throw new ArgumentError(say`No feedback ${quoted(id)} in project ${quoted(client.projectName)}.`);
     return feedback;
   }
 
-  async function listFeedback(args: Args): Promise<ToolResult> {
+  async function listFeedback(args: Args): Promise<ToolDraft> {
     const rawStatus = args.status;
     let statuses: FeedbackStatus[] | undefined;
     if (rawStatus === undefined || rawStatus === null) statuses = ["open", "in_progress"];
     else if (rawStatus === "all") statuses = undefined;
     else if (Array.isArray(rawStatus)) {
-      if (rawStatus.length === 0) throw new ArgumentError("`status` must not be an empty list.");
+      if (rawStatus.length === 0) throw new ArgumentError(trusted`\`status\` must not be an empty list.`);
       statuses = [...new Set(rawStatus.map((value) => oneOf(value, FEEDBACK_STATUSES, "status")))];
     } else statuses = [oneOf(rawStatus, FEEDBACK_STATUSES, "status")];
     const type: FeedbackType | undefined =
@@ -430,7 +505,7 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
     const search = optionalString(args, "search", 200);
     const limitValue = args.limit ?? DEFAULT_LIST_LIMIT;
     if (!Number.isInteger(limitValue) || (limitValue as number) < 1 || (limitValue as number) > SERVER_PAGE_LIMIT) {
-      throw new ArgumentError(`\`limit\` must be an integer from 1 to ${SERVER_PAGE_LIMIT}.`);
+      throw new ArgumentError(trusted`\`limit\` must be an integer from 1 to ${SERVER_PAGE_LIMIT}.`);
     }
     const limit = limitValue as number;
     const cursorValue = optionalString(args, "cursor", 200);
@@ -481,10 +556,10 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
       serverTotal: total,
       note: DATA_NOTE,
     };
-    return { content: [text(JSON.stringify(structured, null, 2))], structuredContent: structured };
+    return { content: [{ type: "json", value: structured }], structuredContent: structured };
   }
 
-  async function getFeedback(args: Args): Promise<ToolResult> {
+  async function getFeedback(args: Args): Promise<ToolDraft> {
     const id = requiredString(args, "id", 200);
     const format = args.format === undefined ? "prompt" : oneOf(args.format, REPORT_FORMATS_FOR_TOOLS, "format");
     // Arguments can add redaction, never remove what the server's policy asks for.
@@ -494,48 +569,57 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
       queryStrings: policy.queryStrings || optionalBoolean(args, "redact_query_strings", false),
     };
     const feedback = await findOrFail(id);
-    const report = formatFeedbackReport(feedback, { format, redact });
-    const next = [
-      `Status: ${feedback.status}.`,
-      feedback.screenshotUrl
-        ? `A screenshot exists: call get_screenshot with id ${JSON.stringify(feedback.id)}.`
-        : "No screenshot.",
-      "When you have addressed it, add_reply to tell the reviewer and update_status to resolve it.",
-    ].join(" ");
+    const next = feedback.screenshotUrl
+      ? say`Status: ${feedback.status}. A screenshot exists: call get_screenshot with id ${quoted(feedback.id)}. When you have addressed it, add_reply to tell the reviewer and update_status to resolve it.`
+      : say`Status: ${feedback.status}. No screenshot. When you have addressed it, add_reply to tell the reviewer and update_status to resolve it.`;
+    // The formatter redacts every value before it renders (its JSON format
+    // encodes the redacted model), under this server's policy plus the arguments.
+    const reportText = formatFeedbackReport(feedback, { format, redact }) as SafeText;
     return {
-      content: [text(report), text(next)],
+      content: [
+        { type: "text", text: reportText },
+        { type: "text", text: next },
+      ],
       structuredContent: { ...buildFeedbackReport(feedback, { redact }) },
     };
   }
 
-  async function getScreenshot(args: Args): Promise<ToolResult> {
+  async function getScreenshot(args: Args): Promise<ToolDraft> {
     const feedback = await findOrFail(requiredString(args, "id", 200));
-    if (!feedback.screenshotUrl) return toolError(`Feedback ${feedback.id} has no screenshot.`);
+    if (!feedback.screenshotUrl) return toolError(say`Feedback ${feedback.id} has no screenshot.`);
     const image = await client.screenshot(feedback);
     return {
       content: [
         { type: "image", data: image.data, mimeType: image.mimeType },
-        text(`Screenshot of feedback ${feedback.id}, taken by the reviewer's browser on ${feedback.url}.`),
+        {
+          type: "text",
+          text: say`Screenshot of feedback ${feedback.id}, taken by the reviewer's browser on ${url(feedback.url)}.`,
+        },
       ],
     };
   }
 
-  async function updateStatus(args: Args): Promise<ToolResult> {
+  async function updateStatus(args: Args): Promise<ToolDraft> {
     const id = requiredString(args, "id", 200);
     const status = oneOf(args.status, FEEDBACK_STATUSES, "status");
     const updated = await client.setStatus(id, status);
     return {
-      content: [text(`Feedback ${updated.id} is now ${updated.status}.`)],
+      content: [{ type: "text", text: say`Feedback ${updated.id} is now ${updated.status}.` }],
       structuredContent: { id: updated.id, status: updated.status, resolvedAt: updated.resolvedAt },
     };
   }
 
-  async function addReply(args: Args): Promise<ToolResult> {
+  async function addReply(args: Args): Promise<ToolDraft> {
     const id = requiredString(args, "id", 200);
     const body = requiredString(args, "body", COMMENT_BODY_MAX_LENGTH);
     const comment = await client.addComment(id, body.trim(), authorName);
     return {
-      content: [text(`Reply ${comment.id} posted on feedback ${comment.feedbackId} as ${comment.authorRole}.`)],
+      content: [
+        {
+          type: "text",
+          text: say`Reply ${comment.id} posted on feedback ${comment.feedbackId} as ${comment.authorRole}.`,
+        },
+      ],
       structuredContent: {
         id: comment.id,
         feedbackId: comment.feedbackId,
@@ -545,7 +629,7 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
     };
   }
 
-  const handlers: Record<string, (args: Args) => Promise<ToolResult>> = {
+  const handlers: Record<string, (args: Args) => Promise<ToolDraft>> = {
     list_feedback: listFeedback,
     get_feedback: getFeedback,
     get_screenshot: getScreenshot,
@@ -559,17 +643,22 @@ export function createSitepingMcpServer(options: SitepingMcpServerOptions): Site
     const handler = Object.hasOwn(handlers, params.name) ? handlers[params.name] : undefined;
     if (!handler) return { code: INVALID_PARAMS, message: `Unknown tool: ${params.name}` };
     const args = params.arguments ?? {};
-    if (!isRecord(args) || Array.isArray(args)) return toolError("`arguments` must be an object.");
+    if (!isRecord(args) || Array.isArray(args))
+      return finalize(redactor, toolError(trusted`\`arguments\` must be an object.`));
     const known = TOOLS.find((tool) => tool.name === params.name)?.inputSchema.properties as Record<string, unknown>;
     const unknown = Object.keys(args).filter((key) => !Object.hasOwn(known, key));
-    if (unknown.length > 0) return toolError(`Unknown argument(s): ${unknown.join(", ")}.`);
-    let result: ToolResult;
+    if (unknown.length > 0) return finalize(redactor, toolError(say`Unknown argument(s): ${unknown.join(", ")}.`));
+    let draft: ToolDraft;
     try {
-      result = await handler(args as Args);
+      draft = await handler(args as Args);
     } catch (error) {
-      result = toolError(error instanceof Error ? error.message : String(error));
+      draft = toolError(
+        error instanceof ArgumentError
+          ? error.safeMessage
+          : redactMessage(redactor, error instanceof Error ? error.message : String(error)),
+      );
     }
-    return redactResult(redactor, result);
+    return finalize(redactor, draft);
   }
 
   async function handleOne(message: unknown): Promise<JsonRpcResponse | null> {

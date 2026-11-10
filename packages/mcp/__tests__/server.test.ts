@@ -689,3 +689,88 @@ describe("redaction of every tool's output", () => {
     expect(() => readConfigFromEnv({ ...base, SITEPING_REDACT_EMAILS: "maybe" })).toThrow("SITEPING_REDACT_EMAILS");
   });
 });
+
+describe("values are redacted before they are encoded", () => {
+  // Forms JSON.stringify escapes: quotes (\"), a newline (\n), a backslash
+  // (\/ stays \\/), unicode around an email — escaping must not hide them.
+  const MESSAGE = [
+    'Contact «"françois.dupont@exemple.fr"» ✓ for token="sekr3t-quoted"',
+    "password:\nhunter22-newline",
+    "callback https:\\/\\/site.example\\/cb?code=oauth-escaped&x=1",
+    'api_key: "k3y-in-quotes"',
+  ].join("\n");
+  const LEAKS = ["françois.dupont@exemple.fr", "sekr3t-quoted", "hunter22-newline", "oauth-escaped", "k3y-in-quotes"];
+
+  function expectNoLeak(result: ToolResult) {
+    const texts = result.content.map((block) => (block.type === "text" ? block.text : ""));
+    for (const leak of LEAKS) {
+      for (const text of texts) expect(text).not.toContain(leak);
+      expect(JSON.stringify(result.structuredContent ?? {})).not.toContain(leak);
+      // Decoded too, for the JSON text blocks.
+      for (const text of texts) {
+        const decoded = (() => {
+          try {
+            return JSON.stringify(JSON.parse(text));
+          } catch {
+            return text;
+          }
+        })();
+        expect(decoded).not.toContain(leak);
+      }
+    }
+  }
+
+  it("in list_feedback's JSON text and structured content", async () => {
+    const { server, seed } = stack();
+    await seed({ message: MESSAGE, url: "https://site.example/p?token=sekr3t-quoted", at: "2026-07-01T10:00:00Z" });
+    const result = await call(server, "list_feedback");
+    expectNoLeak(result);
+    // The text block is the redacted structured content, encoded.
+    expect(JSON.parse(textOf(result))).toEqual(result.structuredContent);
+  });
+
+  it.each(["prompt", "markdown", "text", "json"])("in get_feedback (%s)", async (format) => {
+    const { server, seed } = stack();
+    const id = await seed({ message: MESSAGE, at: "2026-07-01T10:00:00Z" });
+    expectNoLeak(await call(server, "get_feedback", { id, format }));
+  });
+
+  it("in a server error whose JSON body carries the values", async () => {
+    const body = JSON.stringify({
+      error: 'bad token="sekr3t-quoted" for "françois.dupont@exemple.fr"\npassword:\nhunter22-newline',
+    });
+    const server = createSitepingMcpServer({
+      client: createSitepingApiClient({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        projectName: PROJECT,
+        fetch: async () => new Response(body, { status: 500, headers: { "Content-Type": "application/json" } }),
+      }),
+    });
+    const result = await call(server, "list_feedback");
+    expect(result.isError).toBe(true);
+    expectNoLeak(result);
+    expect(textOf(result)).toContain("500");
+    expect(textOf(result)).toContain("[secret]");
+  });
+
+  it("in a server error that is not JSON", async () => {
+    const server = createSitepingMcpServer({
+      client: createSitepingApiClient({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        projectName: PROJECT,
+        fetch: async () => new Response('oops token="sekr3t-quoted" {not json', { status: 502 }),
+      }),
+    });
+    const result = await call(server, "list_feedback");
+    expectNoLeak(result);
+  });
+
+  it("in an id echoed back in quotes", async () => {
+    const { server } = stack();
+    const result = await call(server, "get_feedback", { id: 'x" token="sekr3t-quoted' });
+    expectNoLeak(result);
+    expect(textOf(result)).toContain("No feedback");
+  });
+});
