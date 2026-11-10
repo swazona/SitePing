@@ -160,6 +160,18 @@
         "mdast-util-from-markdown": "^2.1.0",
       },
     },
+    "packages/mcp": {
+      "name": "@siteping/mcp",
+      "version": "0.0.0",
+      "bin": {
+        "siteping-mcp": "./dist/cli.js",
+      },
+      "devDependencies": {
+        "@siteping/adapter-memory": "workspace:*",
+        "@siteping/core": "workspace:*",
+        "@siteping/server": "workspace:*",
+      },
+    },
     "packages/screenshot-storage": {
       "name": "@siteping/screenshot-storage",
       "version": "0.2.1",
@@ -835,6 +847,8 @@
     "@siteping/demo": ["@siteping/demo@workspace:apps/demo"],
 
     "@siteping/integration-issues": ["@siteping/integration-issues@workspace:packages/integration-issues"],
+
+    "@siteping/mcp": ["@siteping/mcp@workspace:packages/mcp"],
 
     "@siteping/screenshot-storage": ["@siteping/screenshot-storage@workspace:packages/screenshot-storage"],
 

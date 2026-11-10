@@ -17,7 +17,7 @@
 - `bun run openapi:update` — regenerate `packages/server/openapi.json` (the wire protocol, from the server's zod schemas and response types) after a protocol change; a test fails while it is stale
 
 ## Architecture
-- **Monorepo** with bun workspaces — 12 packages in `packages/`:
+- **Monorepo** with bun workspaces — 13 packages in `packages/`:
   - `@siteping/core` — shared types, schema, store errors + helpers (internal, not published, no release-please entry, no npm publish job)
   - `@siteping/widget` — browser feedback widget (Shadow DOM, closed mode). Accepts `store` option for client-side mode (no server needed)
   - `@siteping/dashboard` — Linear-style triage inbox React component (`<SitepingInbox />` + headless `useSitepingInbox()`); no Shadow DOM — scoped `spd-` classes + `--spd-*` CSS vars injected once
@@ -26,6 +26,7 @@
   - `@siteping/adapter-drizzle` — Drizzle ORM store: `/pg` (any PostgreSQL driver, Neon HTTP included) and `/libsql` (Turso); `drizzle-orm` peer, mounted through `@siteping/server`
   - `@siteping/screenshot-storage` — ready-made `ScreenshotStorage` for the stores: `createScreenshotStorage(objectStore)` over `/s3` (SigV4 on Web Crypto, no AWS SDK), `/cloudflare-images`, `/drizzle-pg`, `/drizzle-libsql`, `/filesystem` (the only Node entry) and `/memory`, plus `createScreenshotServeHandler` (own keys only, inert images inline); random key per upload, `drizzle-orm` optional peer
   - `@siteping/integration-issues` — `createIssueTrackerHooks` (server lifecycle hooks) over an `IssueTracker` port, providers `/github`, `/gitlab`, `/linear` (GraphQL), `/jira` (REST v3, ADF) and `/plane` (REST v1, HTML, always a User-Agent): one issue per feedback, linked by a marker on the body's first line (the only line parsed; a code span on Linear/Jira/Plane, which drop HTML comments), visitor text quoted as code; `create<Tracker>WebhookHandler` (all but GitLab) verifies the tracker's HMAC and syncs closed/reopened issues back to the store (`updateFeedback`, reading `getFeedback` when present to skip echoes); no `@siteping/server` dependency: its hooks restate the server's types structurally (type test locks them, `check:consistency` forbids the import), so one 0.x release installs next to any server
+  - `@siteping/mcp` — Model Context Protocol stdio server (`npx @siteping/mcp`, bin `siteping-mcp`): tools `list_feedback`, `get_feedback`, `get_screenshot`, `update_status`, `add_reply` over the `@siteping/server` HTTP API with the admin `apiKey` (env `SITEPING_URL`/`SITEPING_API_KEY`/`SITEPING_PROJECT`); hand-rolled JSON-RPC, no dependencies; reports rendered by core's `@siteping/core/report` (shared with the dashboard's lazy Export dialog)
   - `@siteping/adapter-memory` — in-memory adapter (testing, demos, serverless)
   - `@siteping/adapter-localstorage` — client-side localStorage adapter (demos, prototyping)
   - `@siteping/adapter-kit` — published toolkit for third-party adapters: store contract, `createCollectionStore` engine, record builders, conformance suite (`/testing`, vitest optional peer)

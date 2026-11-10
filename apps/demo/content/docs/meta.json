@@ -8,6 +8,7 @@
     "server",
     "comments",
     "issue-trackers",
+    "mcp",
     "adapters",
     "cli",
     "known-limitations",

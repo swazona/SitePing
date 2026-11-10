@@ -4,23 +4,27 @@ import { sitepingLibrary, terserPass } from "../../tsup.preset.js";
 
 type EsbuildPlugin = NonNullable<Options["esbuildPlugins"]>[number];
 
-// `INBOX_CSS` is a template literal, so the JS minifier ships it verbatim —
-// comments and indentation included. Minify it as CSS instead (~1.8 kB
-// gzip off the ESM entry). The build fails if the literal stops being a
-// plain one, rather than silently shipping it unminified.
+// `INBOX_CSS` (and the export dialog's lazy `EXPORT_CSS`) are template
+// literals, so the JS minifier ships them verbatim — comments and
+// indentation included. Minify them as CSS instead (~1.8 kB gzip off the ESM
+// entry). The build fails if a literal stops being a plain one, rather than
+// silently shipping it unminified.
 const minifyInboxCss: EsbuildPlugin = {
   name: "minify-inbox-css",
   setup(build) {
-    build.onLoad({ filter: /[\\/]src[\\/]styles\.ts$/ }, async (args) => {
+    build.onLoad({ filter: /[\\/]src[\\/](?:export-)?styles\.ts$/ }, async (args) => {
       const source = await readFile(args.path, "utf8");
-      const literal = /export const INBOX_CSS = `([^`]*)`;/.exec(source);
-      const css = literal?.[1];
-      if (!literal || !css || css.includes("${") || css.includes("\\")) {
-        throw new Error("[minify-inbox-css] INBOX_CSS must be a plain template literal (no interpolation or escape)");
+      const literal = /export const (INBOX_CSS|EXPORT_CSS) = `([^`]*)`;/.exec(source);
+      const name = literal?.[1];
+      const css = literal?.[2];
+      if (!literal || !name || !css || css.includes("${") || css.includes("\\")) {
+        throw new Error(
+          `[minify-inbox-css] ${args.path}: the CSS must be a plain template literal (no interpolation or escape)`,
+        );
       }
       const { code } = await build.esbuild.transform(css, { loader: "css", minify: true });
       return {
-        contents: source.replace(literal[0], `export const INBOX_CSS = ${JSON.stringify(code.trim())};`),
+        contents: source.replace(literal[0], `export const ${name} = ${JSON.stringify(code.trim())};`),
         loader: "ts",
       };
     });

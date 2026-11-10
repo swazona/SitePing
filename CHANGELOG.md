@@ -12,6 +12,7 @@ Each published package keeps its own changelog, written by release-please:
 - [`@siteping/adapter-kit`](./packages/adapter-kit/CHANGELOG.md)
 - [`@siteping/screenshot-storage`](./packages/screenshot-storage/CHANGELOG.md)
 - [`@siteping/integration-issues`](./packages/integration-issues/CHANGELOG.md)
+- [`@siteping/mcp`](./packages/mcp/CHANGELOG.md)
 - [`@siteping/cli`](./packages/cli/CHANGELOG.md)
 
 `@siteping/core` is internal: it is bundled into the packages above, so its changes appear in their changelogs. [Its own changelog](./packages/core/CHANGELOG.md) stops at 0.7.2, its last release as a package.

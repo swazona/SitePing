@@ -68,6 +68,11 @@
       "release-type": "node",
       "component": "integration-issues",
       "bump-minor-pre-major": true
+    },
+    "packages/mcp": {
+      "release-type": "node",
+      "component": "mcp",
+      "bump-minor-pre-major": true
     }
   }
 }

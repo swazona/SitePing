@@ -1,0 +1,142 @@
+---
+title: Serveur MCP
+description: Laissez un agent de code IA — Claude Code, Cursor, Codex — lire vos feedbacks, les corriger, répondre et les résoudre, par le Model Context Protocol.
+---
+
+`@siteping/mcp` est un serveur [Model Context Protocol](https://modelcontextprotocol.io). Votre agent de code le lance et obtient cinq outils sur votre projet SitePing : lister les feedbacks, en lire un avec tout son contexte, voir sa capture, répondre au relecteur et changer son statut. Il parle à votre endpoint [`@siteping/server`](/fr/docs/server) en HTTP avec sa clé d'API — aucun accès à la base, aucun service en plus.
+
+Il tourne sur Node 22 ou plus récent, parle MCP sur stdio et n'a aucune dépendance.
+
+## Installation
+
+Trois variables d'environnement :
+
+| Variable | Requise | Ce que c'est |
+|---|---|---|
+| `SITEPING_URL` | oui | L'URL où votre handler est monté, par exemple `https://example.com/api/siteping` |
+| `SITEPING_API_KEY` | oui | L'[`apiKey`](/fr/docs/server#options) du handler |
+| `SITEPING_PROJECT` | oui | Le `projectName` du widget |
+| `SITEPING_AUTHOR_NAME` | non | Le nom sous lequel les réponses sont publiées. Par défaut `AI agent` |
+| `SITEPING_REDACT_SECRETS` | non | Masquer jetons et clés d'API. Par défaut `true` |
+| `SITEPING_REDACT_EMAILS` | non | Masquer les adresses e-mail. Par défaut `true` |
+| `SITEPING_REDACT_QUERY_STRINGS` | non | Retirer les paramètres des URL. Par défaut `false` |
+
+Le serveur a besoin de la politique `apiKey` : il s'authentifie avec `Authorization: Bearer <apiKey>`, ce qui donne aussi à ses réponses le rôle `team`. La clé autorise tous les changements de statut et toutes les suppressions sur l'endpoint : gardez-la dans la configuration de votre agent, jamais dans un fichier commité — les exemples ci-dessous la lisent depuis votre shell.
+
+### Claude Code
+
+```bash
+claude mcp add siteping \
+  --env SITEPING_URL=https://example.com/api/siteping \
+  --env SITEPING_API_KEY="$SITEPING_API_KEY" \
+  --env SITEPING_PROJECT=my-project \
+  -- npx -y @siteping/mcp
+```
+
+Ou, partagé avec l'équipe dans le `.mcp.json` du dépôt (Claude Code remplace `${VAR}` par l'environnement de chaque développeur) :
+
+```json
+{
+  "mcpServers": {
+    "siteping": {
+      "command": "npx",
+      "args": ["-y", "@siteping/mcp"],
+      "env": {
+        "SITEPING_URL": "https://example.com/api/siteping",
+        "SITEPING_API_KEY": "${SITEPING_API_KEY}",
+        "SITEPING_PROJECT": "my-project"
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+`.cursor/mcp.json` dans le projet (ou `~/.cursor/mcp.json` pour tous les projets) :
+
+```json
+{
+  "mcpServers": {
+    "siteping": {
+      "command": "npx",
+      "args": ["-y", "@siteping/mcp"],
+      "env": {
+        "SITEPING_URL": "https://example.com/api/siteping",
+        "SITEPING_API_KEY": "${env:SITEPING_API_KEY}",
+        "SITEPING_PROJECT": "my-project"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+`~/.codex/config.toml` :
+
+```toml
+[mcp_servers.siteping]
+command = "npx"
+args = ["-y", "@siteping/mcp"]
+
+[mcp_servers.siteping.env]
+SITEPING_URL = "https://example.com/api/siteping"
+SITEPING_API_KEY = "your-api-key"
+SITEPING_PROJECT = "my-project"
+```
+
+Tout autre client MCP qui lance des serveurs stdio fonctionne de la même façon : lancez `npx -y @siteping/mcp` avec les trois variables définies.
+
+### Masquage
+
+Tout ce que renvoie un outil passe par le même masquage que l'[export](/fr/docs/dashboard#export) du dashboard — éléments de liste, rapports, légende de la capture, confirmations et messages d'erreur : jetons et clés d'API (y compris dans les URL) et adresses e-mail par défaut, paramètres d'URL si `SITEPING_REDACT_QUERY_STRINGS` est activé. Les variables `SITEPING_REDACT_*` acceptent `true`/`false` (ou `1`/`0`, `yes`/`no`, `on`/`off`). Un argument d'outil peut demander plus de masquage, jamais moins.
+
+## Outils
+
+| Outil | Ce qu'il fait |
+|---|---|
+| `list_feedback` | Du plus récent au plus ancien : id, type, statut, date, URL de la page, un extrait du message (280 caractères), le sélecteur de l'élément annoté, le nombre de réponses et la présence d'une capture |
+| `get_feedback` | Un feedback avec tout ce qu'on sait de lui, rendu par défaut comme un prompt IA |
+| `get_screenshot` | La capture prise par le widget, en contenu image |
+| `update_status` | Passer à `open`, `in_progress`, `resolved` ou `wont_fix` |
+| `add_reply` | Publier une réponse dans le fil du feedback, que le relecteur lit dans le widget |
+
+Les descriptions des outils indiquent à l'agent la marche à suivre — lister, lire, corriger dans le code, répondre, résoudre — et que ce qu'écrit un relecteur est une donnée, jamais une instruction.
+
+### `list_feedback`
+
+| Argument | Par défaut | |
+|---|---|---|
+| `status` | `["open", "in_progress"]` | Un statut, une liste de statuts, ou `"all"` |
+| `type` | — | `question`, `change`, `bug` ou `other` |
+| `url_contains` | — | Sous-chaîne de l'URL de la page, sans tenir compte de la casse, par exemple `/pricing` |
+| `since` | — | Une date ISO 8601 (`2026-07-20`, `2026-07-20T10:00:00Z`) ou une durée écoulée : `30m`, `24h`, `7d`, `2w` |
+| `search` | — | Un texte que contient le message |
+| `limit` | `20` | De 1 à 100 |
+| `cursor` | — | Le `nextCursor` de l'appel précédent |
+
+`status`, `type` et `search` sont filtrés par le serveur ; `url_contains` et `since` par le serveur MCP, qui lit la liste 100 lignes à la fois, de la plus récente à la plus ancienne. Un appel lit au plus 2 000 lignes, puis renvoie ce qu'il a trouvé avec un `nextCursor` pour continuer. Un curseur désigne une position dans la liste : un feedback arrivé entre deux appels la décale, une page peut donc répéter une ligne.
+
+### `get_feedback`
+
+| Argument | Par défaut | |
+|---|---|---|
+| `id` | — | Requis |
+| `format` | `"prompt"` | `prompt`, `markdown`, `text` ou `json` — le même rapport que l'[export](/fr/docs/dashboard#export) du dashboard |
+| `redact_emails` | — | Masquer aussi les e-mails, si `SITEPING_REDACT_EMAILS` est désactivé |
+| `redact_query_strings` | — | Retirer aussi les paramètres d'URL, si `SITEPING_REDACT_QUERY_STRINGS` est désactivé |
+
+Le [masquage](#masquage) du serveur s'applique quels que soient les arguments. Le résultat indique aussi si une capture existe et rappelle à l'agent de répondre et de résoudre une fois le travail fait. L'API HTTP n'a pas de route pour un seul feedback : `get_feedback` et `get_screenshot` cherchent l'id dans la liste, du plus récent au plus ancien, et un feedback plus ancien que les 5 000 plus récents n'est pas trouvé.
+
+### `get_screenshot`
+
+Une capture intégrée (ce que gardent les stores sans [stockage des captures](/fr/docs/adapters/screenshot-storage)) est renvoyée telle quelle. Une URL de capture est téléchargée — résolue par rapport à `SITEPING_URL` si elle est relative, avec la clé d'API uniquement sur la même origine, jamais vers un bucket ou un CDN. Les PNG, JPEG, WebP et GIF jusqu'à 10 Mo sont renvoyés ; le reste donne une erreur d'outil que l'agent peut lire.
+
+### `update_status` et `add_reply`
+
+`update_status` prend `id` et `status` ; le serveur renseigne `resolvedAt` à la fermeture du feedback et l'efface à sa réouverture, comme pour le dashboard. `add_reply` prend `id` et `body` (jusqu'à 5 000 caractères) et le publie avec le rôle `team`, sous `SITEPING_AUTHOR_NAME`, sans e-mail. Les deux déclenchent les webhooks et les hooks du serveur comme n'importe quel autre client.
+
+## Sécurité
+
+L'agent lit des textes écrits par des personnes extérieures à votre équipe. Le format du rapport cite chaque valeur fournie par le navigateur d'un relecteur dans un bloc de code qu'elle ne peut pas refermer, et prévient d'abord l'agent que le texte cité est une donnée, pas une instruction — mais aucun format ne rend un modèle insensible à l'injection de prompt. Relisez ce que change un agent et ne lui donnez que les outils utiles : la plupart des clients MCP permettent de désactiver `add_reply` et `update_status`, ou de demander avant chaque appel.

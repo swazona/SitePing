@@ -12,13 +12,19 @@ export default [
   {
     name: "ESM first load (index.js + static chunks)",
     path: firstLoad(dir, "dist/index.js"),
-    limit: "24.5 KB",
+    limit: "25.5 KB",
     gzip: true,
   },
   {
     name: "Locale dictionaries, all eight summed (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^(de|es|fr|it|ja|ko|pt|ru)-/),
-    limit: "12 KB",
+    limit: "14.5 KB",
+    gzip: true,
+  },
+  {
+    name: "Export dialog with the report formatter (lazy)",
+    path: lazyLoad(dir, "dist/index.js", /^export-dialog-/),
+    limit: "8 KB",
     gzip: true,
   },
 ];
