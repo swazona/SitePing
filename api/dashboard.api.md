@@ -46,8 +46,10 @@ export interface CommentRecord {
 }
 
 export interface DiagnosticsSnapshot {
+    components?: string[] | undefined;
     console: ConsoleDiagnosticEntry[];
     network: NetworkDiagnosticEntry[];
+    recording?: RecordingInfo | undefined;
 }
 
 export interface EndpointSourceOptions {
@@ -244,6 +246,7 @@ export interface ScreenshotRegion {
 export interface SitepingCapabilities {
     comments: boolean;
     deleteComments?: boolean | undefined;
+    recordings?: boolean | undefined;
 }
 
 export type SitepingClientError = SitepingAuthError | SitepingError<"SERVER" | "TIMEOUT"> | SitepingNetworkError | SitepingValidationError;
@@ -531,6 +534,13 @@ const OPEN_FEEDBACK_STATUSES: readonly [
 ];
 
 type OpenFeedbackStatus = (typeof OPEN_FEEDBACK_STATUSES)[number];
+
+interface RecordingInfo {
+    bytes: number;
+    durationMs: number;
+    mimeType: "video/mp4" | "video/webm";
+    url: string;
+}
 
 class SitepingAuthError extends SitepingError<"AUTH"> {
     constructor(message: string, status: 401 | 403);

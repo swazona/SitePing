@@ -172,7 +172,7 @@
       "post": {
         "operationId": "createFeedbackOrComment",
         "summary": "Create a feedback, or a comment on one",
-        "description": "Routed by the body: one carrying `feedbackId` posts a comment to that feedback's thread, any other creates a feedback. Both are idempotent on `clientId`: a replay answers `201` with the stored record.",
+        "description": "Routed by the body: one carrying `feedbackId` posts a comment to that feedback's thread, any other creates a feedback. Both are idempotent on `clientId`: a replay answers `201` with the stored record. A video body (`video/webm`, `video/mp4`) is a screen recording upload instead, taken only by a server with a `recordingStorage` (`capabilities.recordings`): `?projectName=…&clientId=…` name the project it is authorized for and the feedback it will join, it answers `201 { url }`, and the feedback sent next names that URL in `diagnostics.recording`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -192,12 +192,24 @@
                   }
                 ]
               }
+            },
+            "video/webm": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "video/mp4": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "The feedback (fresh or replayed), or the comment.",
+            "description": "The feedback (fresh or replayed), or the comment — or the stored recording's URL.",
             "content": {
               "application/json": {
                 "schema": {
@@ -207,6 +219,18 @@
                     },
                     {
                       "$ref": "#/components/schemas/Comment"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -732,6 +756,49 @@
                         "timestamp"
                       ]
                     }
+                  },
+                  "components": {
+                    "maxItems": 30,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "recording": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "mimeType": {
+                        "type": "string",
+                        "enum": [
+                          "video/webm",
+                          "video/mp4"
+                        ]
+                      },
+                      "durationMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3600000
+                      },
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "mimeType",
+                      "durationMs",
+                      "bytes"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1292,6 +1359,39 @@
                 "timestamp"
               ]
             }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recording": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string",
+                "enum": [
+                  "video/webm",
+                  "video/mp4"
+                ]
+              },
+              "durationMs": {
+                "type": "number"
+              },
+              "bytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "url",
+              "mimeType",
+              "durationMs",
+              "bytes"
+            ]
           }
         },
         "required": [
@@ -1364,11 +1464,15 @@
           },
           "deleteComments": {
             "type": "boolean"
+          },
+          "recordings": {
+            "type": "boolean"
           }
         },
         "required": [
           "comments",
-          "deleteComments"
+          "deleteComments",
+          "recordings"
         ]
       },
       "FeedbackListPermissions": {

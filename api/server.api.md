@@ -50,8 +50,10 @@ export type CommentResponse = Prettify<Serialized<Omit<CommentRecord, "clientId"
 }>;
 
 export interface DiagnosticsSnapshot {
+    components?: string[] | undefined;
     console: ConsoleDiagnosticEntry[];
     network: NetworkDiagnosticEntry[];
+    recording?: RecordingInfo | undefined;
 }
 
 export interface DiscordWebhookPayload {
@@ -176,6 +178,24 @@ export interface GetQueryInput {
     urlPattern?: string | undefined;
 }
 
+export interface RecordingInfo {
+    bytes: number;
+    durationMs: number;
+    mimeType: "video/mp4" | "video/webm";
+    url: string;
+}
+
+export interface RecordingStorage {
+    isOwnUrl(url: string): boolean;
+    upload(bytes: Uint8Array<ArrayBuffer>, ctx: {
+        clientId: string;
+        mimeType: RecordingInfo["mimeType"];
+        projectName: string;
+    }): Promise<{
+        url: string;
+    }>;
+}
+
 export const SITEPING_PROTOCOL_VERSION = 1;
 
 export interface ScreenshotRegion {
@@ -221,6 +241,7 @@ export interface SitepingAuthorizationContext<Principal> extends SitepingRequest
 export interface SitepingCapabilities {
     comments: boolean;
     deleteComments?: boolean | undefined;
+    recordings?: boolean | undefined;
 }
 
 export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
@@ -254,7 +275,9 @@ export interface SitepingHandlerBaseOptions<Principal> {
     hooks?: SitepingLifecycleHooks<Principal>;
     logger?: SitepingLogger | undefined;
     maxBodyBytes?: number | undefined;
+    maxRecordingBytes?: number | undefined;
     presentFeedback?(feedback: FeedbackRecord, context: SitepingRequestContext<Principal>): FeedbackRecord;
+    recordingStorage?: RecordingStorage | undefined;
     store: SitepingStore;
     waitUntil?: ((promise: Promise<unknown>) => void) | undefined;
     webhooks?: ReadonlyArray<WebhookConfig> | WebhookConfig;

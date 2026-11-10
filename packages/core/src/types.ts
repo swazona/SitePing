@@ -39,6 +39,25 @@ export interface DiagnosticsCaptureOptions {
   maxConsoleEntries?: number | undefined;
   /** Failed-request buffer size — default and maximum 20 (the server's cap; larger values are clamped). */
   maxNetworkEntries?: number | undefined;
+  /**
+   * On a React page, record the names of the components from the annotated
+   * element up to the root (`DiagnosticsSnapshot.components`). Defaults to
+   * `true` whenever diagnostics are captured; nothing is recorded on a page
+   * React does not render.
+   */
+  components?: boolean | undefined;
+}
+
+/** Limits of `SitepingConfig.enableScreenRecording`. */
+export interface ScreenRecordingOptions {
+  /** Longest recording, in milliseconds — default 60 000 (one minute). The recording stops by itself there. */
+  maxDurationMs?: number | undefined;
+  /**
+   * Largest recording, in bytes — default 8 MiB. The recording stops by
+   * itself once it reaches it. A server's `maxRecordingBytes` refuses a
+   * larger upload, so keep the two in line.
+   */
+  maxBytes?: number | undefined;
 }
 
 /** Identity payload supplied by the host application — bypasses the modal. */
@@ -265,6 +284,29 @@ export interface SitepingBaseConfig {
    * (or object storage) regardless of what was on the page.
    */
   enableScreenshot?: boolean | undefined;
+  /**
+   * With `enableScreenshot`, offer "Mark up screenshot" in the feedback form:
+   * an editor to draw on the capture (pen, arrow, highlight) and redact
+   * parts of it (pixelated in the image sent, not hidden by a layer) before
+   * it is sent. Defaults to `true`; the editor's code loads on first use.
+   */
+  screenshotEditor?: boolean | undefined;
+  /**
+   * Offer "Record screen" in the floating button's menu: the browser's
+   * screen-sharing prompt (`getDisplayMedia`, the current tab preselected
+   * where the browser supports it), then a recording up to the limits, with
+   * a stop control on screen. The recording is attached to the next
+   * feedback and uploaded before it, to the endpoint's recording upload.
+   *
+   * Defaults to `false`. Offered only in HTTP mode, by a browser that can
+   * record its screen (not iOS Safari, nor most mobile browsers), and
+   * once the endpoint advertises `capabilities.recordings` — a server
+   * configured with `recordingStorage`. Elsewhere the action is not shown.
+   *
+   * **Privacy:** a recording shows whatever the visitor shares, which the
+   * `data-siteping-ignore` masking does not reach.
+   */
+  enableScreenRecording?: boolean | ScreenRecordingOptions | undefined;
   /**
    * Enable right-click (`contextmenu`) to instantly open the comment composer
    * at the cursor location. When enabled, a document-level listener intercepts
@@ -1263,6 +1305,31 @@ export interface NetworkDiagnosticEntry {
 export interface DiagnosticsSnapshot {
   console: ConsoleDiagnosticEntry[];
   network: NetworkDiagnosticEntry[];
+  /**
+   * React component names from the root down to the annotated element
+   * (`["App", "Layout", "PricingCard"]`, at most 30, the nearest kept).
+   * Absent on a page React does not render, and from widgets and servers
+   * that predate it.
+   */
+  components?: string[] | undefined;
+  /**
+   * The screen recording attached to the feedback, uploaded through the
+   * server's `recordingStorage` before the feedback was sent. A server keeps
+   * it only when that storage recognises the URL as its own.
+   */
+  recording?: RecordingInfo | undefined;
+}
+
+/** A screen recording attached to a feedback — see `DiagnosticsSnapshot.recording`. */
+export interface RecordingInfo {
+  /** Where the recording is stored, as `RecordingStorage.upload` returned it. */
+  url: string;
+  /** The media type the server read from the file itself. */
+  mimeType: "video/webm" | "video/mp4";
+  /** Length of the recording in milliseconds. */
+  durationMs: number;
+  /** Size of the uploaded file in bytes. */
+  bytes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1458,6 +1525,11 @@ export interface SitepingCapabilities {
    * leaves it out.
    */
   deleteComments?: boolean | undefined;
+  /**
+   * Whether the endpoint takes screen recordings: the server has a
+   * `recordingStorage`. Absent from servers that predate it: read that as `false`.
+   */
+  recordings?: boolean | undefined;
 }
 
 /** Paginated `FeedbackResponse` shape returned by the API. */

@@ -22,6 +22,8 @@ export interface WireFeedbackList {
 interface ListFeedbacksDependencies<Principal> {
   store: SitepingStore;
   pipeline: Pipeline<Principal>;
+  /** Whether the handler has a `recordingStorage`. */
+  recordings: boolean;
 }
 
 /** Only the query parameters the endpoint understands, as raw strings. */
@@ -36,7 +38,11 @@ function readListQuery(request: Request): Record<string, string> {
 }
 
 /** `GET` — a paginated, filtered page of a project's feedbacks. */
-export function listFeedbacksOperation<Principal>({ store, pipeline }: ListFeedbacksDependencies<Principal>) {
+export function listFeedbacksOperation<Principal>({
+  store,
+  pipeline,
+  recordings,
+}: ListFeedbacksDependencies<Principal>) {
   return async (request: Request): Promise<Response> => {
     const entry = await pipeline.enter(request, "GET");
     if (!entry.ok) return entry.response;
@@ -68,6 +74,8 @@ export function listFeedbacksOperation<Principal>({ store, pipeline }: ListFeedb
           capabilities: {
             comments: store.addComment !== undefined,
             deleteComments: store.deleteComment !== undefined,
+            // Lets the widget offer "Record screen" only where an upload can land.
+            recordings,
           },
           // And the actions this requester would be refused.
           permissions: { canDeleteAll },

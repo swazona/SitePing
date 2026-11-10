@@ -22,6 +22,7 @@ import {
   FEEDBACK_TYPES,
   MAX_COMMENTS_PER_FEEDBACK,
   type Prettify,
+  RECORDING_MIME_TYPES,
   type Serialized,
   SITEPING_PROTOCOL_VERSION,
 } from "@siteping/core";
@@ -99,6 +100,10 @@ const diagnosticsResponse = z.object({
       timestamp: z.string(),
     }),
   ),
+  components: z.array(z.string()).optional(),
+  recording: z
+    .object({ url: z.string(), mimeType: z.enum(RECORDING_MIME_TYPES), durationMs: z.number(), bytes: z.number() })
+    .optional(),
 });
 
 const feedbackPermissions = z.object({
@@ -131,7 +136,7 @@ const feedbackResponse = z.object({
   permissions: feedbackPermissions,
 });
 
-const capabilities = z.object({ comments: z.boolean(), deleteComments: z.boolean() });
+const capabilities = z.object({ comments: z.boolean(), deleteComments: z.boolean(), recordings: z.boolean() });
 
 const listPermissions = z.object({ canDeleteAll: z.boolean() });
 
@@ -324,17 +329,37 @@ export function generateOpenApiDocument(): Record<string, unknown> {
           summary: "Create a feedback, or a comment on one",
           description:
             "Routed by the body: one carrying `feedbackId` posts a comment to that feedback's thread, any other " +
-            "creates a feedback. Both are idempotent on `clientId`: a replay answers `201` with the stored record.",
+            "creates a feedback. Both are idempotent on `clientId`: a replay answers `201` with the stored record. " +
+            "A video body (`video/webm`, `video/mp4`) is a screen recording upload instead, taken only by a server " +
+            "with a `recordingStorage` (`capabilities.recordings`): `?projectName=…&clientId=…` name the project " +
+            "it is authorized for and the feedback it will join, it answers `201 { url }`, and the feedback sent " +
+            "next names that URL in `diagnostics.recording`.",
           requestBody: {
             required: true,
-            content: json({
-              oneOf: [{ ...ref("FeedbackCreate"), not: { required: ["feedbackId"] } }, ref("CommentCreate")],
-            }),
+            content: {
+              ...json({
+                oneOf: [{ ...ref("FeedbackCreate"), not: { required: ["feedbackId"] } }, ref("CommentCreate")],
+              }),
+              ...Object.fromEntries(
+                RECORDING_MIME_TYPES.map((type) => [type, { schema: { type: "string", format: "binary" } }]),
+              ),
+            },
           },
           responses: {
             "201": {
-              description: "The feedback (fresh or replayed), or the comment.",
-              content: json({ oneOf: [ref("Feedback"), ref("Comment")] }),
+              description: "The feedback (fresh or replayed), or the comment — or the stored recording's URL.",
+              content: json({
+                oneOf: [
+                  ref("Feedback"),
+                  ref("Comment"),
+                  {
+                    type: "object",
+                    properties: { url: { type: "string" } },
+                    required: ["url"],
+                    additionalProperties: false,
+                  },
+                ],
+              }),
             },
             ...withBody,
             "404": response("Comment: the feedback does not exist in this project."),

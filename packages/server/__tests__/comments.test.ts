@@ -122,7 +122,7 @@ describe("comments — POST", () => {
       permissions: { canDelete: false },
     });
     const listed = await list(handler);
-    expect(listed.capabilities).toEqual({ comments: true, deleteComments: true });
+    expect(listed.capabilities).toEqual({ comments: true, deleteComments: true, recordings: false });
     expect(listed.feedbacks[0]?.comments?.map((c) => c.id)).toEqual([first.id, second.id]);
     expect(listed.feedbacks[0]?.comments?.[0]).not.toHaveProperty("clientId");
   });
@@ -470,7 +470,7 @@ describe("comments — a store without them", () => {
     );
 
     expect(feedback.comments).toEqual([]);
-    expect(listed.capabilities).toEqual({ comments: false, deleteComments: false });
+    expect(listed.capabilities).toEqual({ comments: false, deleteComments: false, recordings: false });
     expect(listed.feedbacks[0]?.comments).toEqual([]);
     expect(((await patched.json()) as FeedbackResponse).comments).toEqual([]);
     expect(posted.status).toBe(501);
@@ -493,7 +493,7 @@ describe("comments — a store that cannot delete them", () => {
       request("DELETE", { projectName: PROJECT, feedbackId: feedback.id, commentId: reply.id }),
     );
 
-    expect(listed.capabilities).toEqual({ comments: true, deleteComments: false });
+    expect(listed.capabilities).toEqual({ comments: true, deleteComments: false, recordings: false });
     expect(deleted.status).toBe(501);
   });
 });

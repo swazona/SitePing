@@ -19,6 +19,7 @@ import {
   FEEDBACK_TYPES,
   IDENTITY_FIELD_MAX_LENGTH,
   PROJECT_NAME_MAX_LENGTH,
+  RECORDING_MIME_TYPES,
 } from "@siteping/core";
 import * as zod from "zod";
 import { MAX_VALIDATION_ISSUES } from "./constants.js";
@@ -98,9 +99,21 @@ const networkEntrySchema = z.object({
   timestamp: z.string().max(50),
 });
 
+// The screen recording uploaded before the feedback (see `RecordingStorage`):
+// the create operation keeps it only when the storage owns the URL.
+const recordingSchema = z.strictObject({
+  url: z.string().min(1).max(2000),
+  mimeType: z.enum(RECORDING_MIME_TYPES),
+  durationMs: z.number().int().min(0).max(3_600_000),
+  bytes: z.number().int().min(0).max(2_147_483_647),
+});
+
 const diagnosticsSchema = z.object({
   console: boundedArray(consoleEntrySchema, 50),
   network: boundedArray(networkEntrySchema, 20),
+  // React component names, root first — optional: earlier widgets omit it.
+  components: boundedArray(z.string().min(1).max(200), 30).optional(),
+  recording: recordingSchema.optional(),
 });
 
 // Annotation rect position within the screenshot image, as fractions [0, 1]
@@ -124,6 +137,12 @@ const clientIdSchema = z
   .min(1)
   .max(CLIENT_ID_MAX_LENGTH)
   .regex(/^[a-zA-Z0-9_-]+$/, "clientId must be alphanumeric (a-z, A-Z, 0-9, _, -)");
+
+/** Query of a recording upload — the project it is authorized for, and the feedback it will join. */
+export const recordingUploadQuerySchema = z.object({
+  projectName: z.string().min(1).max(PROJECT_NAME_MAX_LENGTH),
+  clientId: clientIdSchema,
+});
 
 export const feedbackCreateSchema = z.object({
   projectName: z.string().min(1).max(PROJECT_NAME_MAX_LENGTH),
