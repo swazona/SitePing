@@ -74,6 +74,15 @@ export const it: Translations = {
   "comments.delete": "Elimina risposta",
   "comments.failed": "Si è verificato un errore. Riprova.",
 
+  // Multi-page flows in the list
+  "flow.kind": "Percorso",
+  "flow.untitled": "Percorso senza titolo",
+  "flow.step": "{count} passo",
+  "flow.steps": "{count} passi",
+  "flow.stepLabel": "Passo {step}",
+  "flow.collapsed": "compresso",
+  "flow.expanded": "espanso",
+
   // Keyboard hints
   "hints.navigate": "naviga",
   "hints.open": "apri",

@@ -77,6 +77,15 @@ export const ja: Translations = {
   "comments.delete": "返信を削除",
   "comments.failed": "問題が発生しました。もう一度お試しください。",
 
+  // Multi-page flows in the list
+  "flow.kind": "フロー",
+  "flow.untitled": "無題のフロー",
+  "flow.step": "{count} ステップ",
+  "flow.steps": "{count} ステップ",
+  "flow.stepLabel": "ステップ {step}",
+  "flow.collapsed": "折りたたみ",
+  "flow.expanded": "展開",
+
   // Footer hint bar
   "hints.navigate": "移動",
   "hints.open": "開く",

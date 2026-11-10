@@ -73,6 +73,15 @@ export const ru: Translations = {
   "comments.delete": "Удалить ответ",
   "comments.failed": "Что-то пошло не так. Попробуйте ещё раз.",
 
+  // Multi-page flows in the list
+  "flow.kind": "Сценарий",
+  "flow.untitled": "Сценарий без названия",
+  "flow.step": "Шагов: {count}",
+  "flow.steps": "Шагов: {count}",
+  "flow.stepLabel": "Шаг {step}",
+  "flow.collapsed": "свёрнут",
+  "flow.expanded": "развёрнут",
+
   // Keyboard hints
   "hints.navigate": "навигация",
   "hints.open": "открыть",

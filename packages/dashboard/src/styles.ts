@@ -524,6 +524,19 @@ export const INBOX_CSS = `
   color: var(--spd-text-3);
 }
 
+/* multi-page flows: a flow's row folds its steps, which sit indented under it */
+.spd-flow-chevron { color: var(--spd-text-3); transition: transform 160ms var(--spd-ease); }
+.spd-row-flow[data-expanded="false"] .spd-flow-chevron { transform: rotate(-90deg); }
+.spd-row-flow[data-expanded="false"]:dir(rtl) .spd-flow-chevron { transform: rotate(90deg); }
+.spd-flow-count { color: var(--spd-text-2); font-weight: 400; }
+.spd-row-step { padding-inline-start: 34px; }
+.spd-row-step-label {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--spd-text-3);
+}
+
 .spd-loadmore {
   display: flex;
   justify-content: center;

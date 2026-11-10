@@ -365,6 +365,59 @@ test.describe("Dashboard inbox against the real handler", () => {
     await expect(rowMessages(page)).toHaveText(["Will succeed"]);
   });
 
+  test("folds the steps of a multi-page flow into one row, each step triaged on its own", async ({
+    page,
+    request,
+  }, testInfo) => {
+    const project = projectFor(testInfo);
+    for (const [flowStep, message] of [
+      [1, "The email step asks for too much"],
+      [2, "The code arrives late"],
+    ] as const) {
+      const res = await request.post(API, {
+        data: {
+          projectName: project,
+          type: "bug",
+          message,
+          url: `/signup/${flowStep}`,
+          viewport: "1280x720",
+          userAgent: "e2e",
+          authorName: "Seeder",
+          authorEmail: "seed@example.com",
+          annotations: [],
+          clientId: `flow-${project}-${flowStep}`,
+          flowId: `flow-${testInfo.testId}`,
+          flowStep,
+          flowTitle: "Sign-up",
+        } satisfies FeedbackPayload,
+      });
+      expect(res.status()).toBe(201);
+    }
+    await seed(request, project, "Outside the flow");
+
+    await openInbox(page, { project });
+    await expect(rowMessages(page)).toHaveText(["Outside the flow", "Sign-up · 2 steps"]);
+    await page.locator(".spd-row-flow").click();
+    await expect(rowMessages(page)).toHaveText([
+      "Outside the flow",
+      "Sign-up · 2 steps",
+      "The email step asks for too much",
+      "The code arrives late",
+    ]);
+
+    // Resolve step 2 only, from the keyboard: step 1 stays open on the server.
+    await page.locator(".spd-row-step").nth(1).click();
+    await page.keyboard.press("e");
+    await expect
+      .poll(async () => (await listFeedbacks(request, project)).map((f) => [f.message, f.status]))
+      .toEqual(
+        expect.arrayContaining([
+          ["The code arrives late", "resolved"],
+          ["The email step asks for too much", "open"],
+        ]),
+      );
+  });
+
   test("the inbox loads from an endpoint that already carries a query string", async ({ page, request }, testInfo) => {
     const project = projectFor(testInfo);
     await seed(request, project, "Tenant-scoped");

@@ -316,6 +316,10 @@ export interface Translations {
     "drawer.title": string;
     "drawer.viewport": string;
     "drawer.zoomScreenshot": string;
+    "flow.expanded": string;
+    "flow.kind": string;
+    "flow.steps": string;
+    "flow.untitled": string;
     "hints.help": string;
     "hints.inProgress": string;
     "hints.navigate": string;
@@ -369,7 +373,10 @@ export interface Translations {
     "type.other": string;
     "type.question": string;
     "comments.team": string;
+    "flow.stepLabel": string;
+    "flow.collapsed": string;
     "inbox.resultsCount": string;
+    "flow.step": string;
 }
 
 export type UseSitepingInboxOptions = InboxCustomSourceOptions | InboxEndpointOptions | InboxStoreOptions;

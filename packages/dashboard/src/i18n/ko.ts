@@ -77,6 +77,15 @@ export const ko: Translations = {
   "comments.delete": "답글 삭제",
   "comments.failed": "문제가 발생했습니다. 다시 시도하세요.",
 
+  // Multi-page flows in the list
+  "flow.kind": "흐름",
+  "flow.untitled": "제목 없는 흐름",
+  "flow.step": "{count}단계",
+  "flow.steps": "{count}단계",
+  "flow.stepLabel": "{step}단계",
+  "flow.collapsed": "접힘",
+  "flow.expanded": "펼침",
+
   // Footer hint bar
   "hints.navigate": "이동",
   "hints.open": "열기",

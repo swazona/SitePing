@@ -73,6 +73,15 @@ export const pt: Translations = {
   "comments.delete": "Excluir resposta",
   "comments.failed": "Algo deu errado. Tente novamente.",
 
+  // Multi-page flows in the list
+  "flow.kind": "Fluxo",
+  "flow.untitled": "Fluxo sem título",
+  "flow.step": "{count} etapa",
+  "flow.steps": "{count} etapas",
+  "flow.stepLabel": "Etapa {step}",
+  "flow.collapsed": "recolhido",
+  "flow.expanded": "expandido",
+
   // Hints
   "hints.navigate": "navegar",
   "hints.open": "abrir",

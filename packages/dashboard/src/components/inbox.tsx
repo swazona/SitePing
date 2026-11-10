@@ -1,6 +1,7 @@
 import { type FeedbackStatus, intlLocale } from "@siteping/core";
 import type { CSSProperties, ReactElement, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useInsertionEffect, useMemo, useRef, useState } from "react";
+import { entryId, flowRowId, listEntries } from "../flows.js";
 import { recordPageUrl } from "../format.js";
 import { createT, getStatusLabel, loadLocale, tWithParams } from "../i18n/index.js";
 import { ensureStyles } from "../inject-styles.js";
@@ -198,6 +199,47 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
     wasLoading.current = state.loading;
   }, [state.loading, state.total, state.items.length, t]);
 
+  // ----- multi-page flows: each folds into one row of the list, expanded on demand
+  const [expandedFlows, setExpandedFlows] = useState<ReadonlySet<string>>(() => new Set());
+  const entries = useMemo(() => listEntries(state.items, expandedFlows), [state.items, expandedFlows]);
+  const setFlowExpanded = useCallback(
+    (flowId: string, expand: boolean) => {
+      setExpandedFlows((current) => {
+        if (current.has(flowId) === expand) return current;
+        const next = new Set(current);
+        if (expand) next.add(flowId);
+        else next.delete(flowId);
+        return next;
+      });
+      // A collapsing flow takes the focus of the step it hides.
+      const focused = state.items.find((item) => item.id === state.focusedId);
+      if (!expand && focused?.flowId === flowId) state.focus(flowRowId(flowId));
+    },
+    [state],
+  );
+  const toggleFlow = useCallback(
+    (flowId: string) => setFlowExpanded(flowId, !expandedFlows.has(flowId)),
+    [expandedFlows, setFlowExpanded],
+  );
+  // A step focused from elsewhere (opened from a deep link, the drawer) shows:
+  // its flow expands, so aria-activedescendant never points at a hidden row.
+  useEffect(() => {
+    const flowId = state.items.find((item) => item.id === state.focusedId)?.flowId;
+    if (flowId) setExpandedFlows((current) => (current.has(flowId) ? current : new Set(current).add(flowId)));
+  }, [state.focusedId, state.items]);
+  /** The flow whose row is focused, if any. */
+  const focusedFlow = entries.find((entry) => entry.kind === "flow" && entryId(entry) === state.focusedId);
+  /** Move focus `delta` lines through what the list shows. */
+  const moveFocus = useCallback(
+    (delta: 1 | -1) => {
+      if (entries.length === 0) return;
+      const index = entries.findIndex((entry) => entryId(entry) === state.focusedId);
+      const next = index === -1 ? entries[0] : entries[Math.min(Math.max(index + delta, 0), entries.length - 1)];
+      if (next) state.focus(entryId(next));
+    },
+    [entries, state],
+  );
+
   // ----- keyboard
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -267,16 +309,32 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
         case "j":
         case "ArrowDown":
           if (overlayOpen) return;
-          state.focusNext();
+          moveFocus(1);
           break;
         case "k":
         case "ArrowUp":
           if (overlayOpen) return;
-          state.focusPrev();
+          moveFocus(-1);
           break;
+        // A flow's row expands to its steps, and collapses back.
+        case "ArrowRight":
+        case "ArrowLeft": {
+          if (overlayOpen) return;
+          const flowId =
+            focusedFlow?.kind === "flow"
+              ? focusedFlow.group.flowId
+              : state.items.find((item) => item.id === state.focusedId)?.flowId;
+          if (!flowId) return;
+          setFlowExpanded(flowId, event.key === "ArrowRight");
+          break;
+        }
         case "Enter": {
           // Native activation wins on interactive elements (buttons, links).
           if (target?.closest("button, a, [role='button'], summary")) return;
+          if (focusedFlow?.kind === "flow" && !overlayOpen) {
+            toggleFlow(focusedFlow.group.flowId);
+            break;
+          }
           if (!actionId) return;
           if (state.openedId === actionId) {
             // Drawer already open for this feedback → jump to it on the page.
@@ -290,7 +348,8 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
         }
         case "o":
           if (!state.focusedId) return;
-          state.openFeedback(state.focusedId);
+          if (focusedFlow?.kind === "flow") toggleFlow(focusedFlow.group.flowId);
+          else state.openFeedback(state.focusedId);
           break;
         case "e":
           toggleStatus("resolved", actionId);
@@ -334,7 +393,20 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
       }
       event.preventDefault();
     },
-    [state, shortcutsOpen, toggleStatus, undo, deepLinkParam, siteUrl, wide, focusList],
+    [
+      state,
+      shortcutsOpen,
+      toggleStatus,
+      undo,
+      deepLinkParam,
+      siteUrl,
+      wide,
+      focusList,
+      moveFocus,
+      focusedFlow,
+      setFlowExpanded,
+      toggleFlow,
+    ],
   );
 
   // ----- render
@@ -380,7 +452,7 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
               <EmptyState state={state} custom={emptyState} />
             ) : (
               <>
-                <List state={state} />
+                <List state={state} entries={entries} onToggleFlow={toggleFlow} />
                 {state.hasMore ? (
                   <div className="spd-loadmore">
                     <button
