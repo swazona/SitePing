@@ -632,7 +632,7 @@ createSitepingHandler({
 
 Ces callbacks reçoivent `{ request, principal }` comme contexte ; `principal` vaut `null` sous la politique `apiKey`. Les hooks écrits comme méthodes de classe gardent leur `this`.
 
-Pour garder un ticket GitHub, GitLab, Linear, Jira ou Plane par feedback, fermé et rouvert avec lui, [`@siteping/integration-issues`](/fr/docs/issue-trackers) construit ces hooks pour vous.
+Pour garder un ticket GitHub, GitLab, Linear, Jira, Plane ou ClickUp par feedback, fermé et rouvert avec lui, [`@siteping/integration-issues`](/fr/docs/issue-trackers) construit ces hooks pour vous.
 
 ### Prévenir l'auteur
 
@@ -671,7 +671,7 @@ createSitepingHandler({
 - **Quand il se déclenche.** Un PATCH lit d'abord le feedback avec le `getFeedback` du store, quand il en a un ([memory](/fr/docs/adapters/memory) l'a), et seul un changement qui passe entre ouvert et fermé, ou change la raison de fermeture, notifie : `open` → `in_progress` ne notifie pas. Un store sans `getFeedback` ne garde aucun statut précédent à comparer : chaque PATCH vers `resolved` ou `wont_fix` notifie `resolved`, chaque PATCH vers `open` notifie `reopened`, et un PATCH vers `in_progress` rien. Le feedback d'une réponse est lu avec `getFeedback` aussi, sinon cherché parmi les 1 000 feedbacks les plus récents de son projet ; un plus ancien est journalisé et pas notifié.
 - **Latence et échecs.** Il est attendu avant la réponse, après les hooks, comme eux : un serveur SMTP lent retient la requête du tableau de bord. Une exception est journalisée sous `[siteping] Hook notifyReporter failed` et ne fait jamais échouer la requête. Pour répondre tout de suite, confiez l'envoi à `waitUntil` (ou à une file) vous-même et rendez la main.
 - **Les réponses demandent `addCommentIfAbsent`.** Un store à fils incapable de distinguer une nouvelle réponse d'un renvoi enverrait un e-mail à chaque renvoi : le handler refuse de démarrer (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Tous les stores fournis l'implémentent.
-- **Synchronisations depuis un tracker.** Un statut changé depuis GitHub, Linear, Jira ou Plane par les [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) ne passe pas par le handler : passez la même fonction à leur `onStatusSynced`.
+- **Synchronisations depuis un tracker.** Un statut changé depuis GitHub, Linear, Jira, Plane ou ClickUp par les [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) ne passe pas par le handler : passez la même fonction à leur `onStatusSynced`.
 - **Adresses usurpées.** `authorEmail` est ce que le widget a envoyé, saisi par des visiteurs anonymes. Quoi que vous y envoyiez, c'est le visiteur qui a choisi le destinataire : limitez le contenu à son propre feedback, jamais à ce qu'un autre relecteur a écrit et qu'il ne pouvait pas déjà voir.
 
 ## Référence HTTP

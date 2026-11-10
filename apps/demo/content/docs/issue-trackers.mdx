@@ -1,15 +1,15 @@
 ---
 title: Issue trackers
-description: One GitHub, GitLab, Linear, Jira or Plane issue per feedback, opened, closed and reopened along with it through the server's lifecycle hooks — and back, through tracker webhooks.
+description: One GitHub, GitLab, Linear, Jira, Plane or ClickUp issue per feedback, opened, closed and reopened along with it through the server's lifecycle hooks — and back, through tracker webhooks.
 ---
 
-`@siteping/integration-issues` builds the [lifecycle hooks](/docs/server#extension-points) of `@siteping/server` so that every feedback gets its own issue on GitHub, GitLab, Linear, Jira or Plane:
+`@siteping/integration-issues` builds the [lifecycle hooks](/docs/server#extension-points) of `@siteping/server` so that every feedback gets its own issue on GitHub, GitLab, Linear, Jira, Plane or ClickUp:
 
-- **created** → an issue opens, labelled `siteping`, with the message, the page, a deep link, the annotated elements, the reviewer's environment and diagnostics;
+- **created** → an issue opens, labelled `siteping`, with the message, the page, a deep link, the annotated elements, the reviewer's environment and diagnostics, and the flow step, React component path and screen recording when the feedback has them;
 - **resolved** or **won't fix** → the issue closes; **reopened** → it reopens;
 - **deleted** → the issue closes with a comment. If the tracker is unreachable, the delete is refused and can be retried.
 
-No database column is added: the first line of each issue is a marker naming its feedback. And with a [webhook](#two-way-sync), closing or reopening the issue on GitHub, Linear, Jira or Plane updates the feedback too.
+No database column is added: the first line of each issue is a marker naming its feedback. And with a [webhook](#two-way-sync), closing or reopening the issue on GitHub, Linear, Jira, Plane or ClickUp updates the feedback too.
 
 ```bash
 npm i @siteping/integration-issues
@@ -103,6 +103,25 @@ createIssueTrackerHooks({
 
 Plane's REST API v1 (work items, labels, states), with a personal access token sent as `X-API-Key`. The body goes as HTML, every value escaped. Every request carries a `User-Agent`, which Plane requires: some runtimes' `fetch` (Cloudflare Workers, for one) send none. On a self-hosted instance, pass `apiBaseUrl: "https://plane.acme.com"`; issue links then point to that origin, or to `appBaseUrl` when the web app is served elsewhere.
 
+## ClickUp
+
+```ts
+import { createClickUpTracker } from "@siteping/integration-issues/clickup";
+
+createIssueTrackerHooks({
+  tracker: createClickUpTracker({
+    listId: process.env.CLICKUP_LIST_ID!,
+    workspaceId: process.env.CLICKUP_WORKSPACE_ID!,
+    token: process.env.CLICKUP_TOKEN!,
+  }),
+  siteUrl: "https://acme.com",
+});
+```
+
+ClickUp's API v2. Each feedback becomes a task in the list `listId`, tagged `siteping` (plus your `labels`, which ClickUp keeps as tags of the list's space). `workspaceId` is the workspace's id, the number after `app.clickup.com/` in its URLs (`team_id` in the API). Both are required: a task of any other list or workspace is never read as a SitePing task, whatever tag and marker it carries. The token is a personal API token (`pk_…`), sent as is in `Authorization`; for an OAuth access token, add `tokenType: "oauth"`, which sends it as `Bearer`. The task's description goes as Markdown (`markdown_content`, with the same text as `description`), and the deletion comment as plain text, posted with `notify_all: false`.
+
+ClickUp has no close reason: `resolved` and `wont_fix` both move the task to the list's `closed` status unless you name statuses with `statuses`, for instance `{ wont_fix: "won't fix" }` for a `done` status of that name. A finished task then reads back as `wont_fix` when it is in that status and as `resolved` otherwise; without a `wont_fix` name, a finished task gives no reason and a `wont_fix` feedback keeps its status.
+
 ## Status mapping
 
 | Feedback | GitHub issue | GitLab issue |
@@ -120,7 +139,15 @@ Plane's REST API v1 (work items, labels, states), with a personal access token s
 | `wont_fix` | First *canceled* state | A transition into *Done* named like "Won't Do", else the first into *Done* | First *cancelled* state |
 | Deleted | As `wont_fix`, with a comment | As `wont_fix`, with a comment | As `wont_fix`, with a comment |
 
-"First" goes by the state's position in the workflow. Name the ones to use with the `states` option (Linear, Plane: `{ resolved: "Shipped" }`) or `transitions` (Jira: transition names), matched case-insensitively. When a Jira issue has no transition into the category asked for and is already in it, nothing is done; otherwise the hook fails and names the missing transition.
+| Feedback | ClickUp task |
+|---|---|
+| `open` | The list's status of type *open* (to do) |
+| `in_progress` (from a closed task) | The list's first *custom* status |
+| `resolved` | The *closed* status, else a *done* one |
+| `wont_fix` | As `resolved`, unless `statuses.wont_fix` names one |
+| Deleted | As `wont_fix`, with a comment |
+
+"First" goes by the state's position in the workflow. Name the ones to use with the `states` option (Linear, Plane: `{ resolved: "Shipped" }`), `statuses` (ClickUp: status names) or `transitions` (Jira: transition names), matched case-insensitively. When a Jira issue has no transition into the category asked for and is already in it, nothing is done; otherwise the hook fails and names the missing transition.
 
 Moving between `open` and `in_progress` only looks the issue up, and writes nothing to an issue that is open. With `syncStatus: false`, issues are only created and closed on delete.
 
@@ -132,11 +159,14 @@ The title is `[SitePing]` followed by the message on one line, truncated to 255 
 
 - **Message**
 - **Type**
+- **Flow**, when the feedback is a step of a [multi-page flow](/docs/widget/flows): its step, the flow's title (or "an untitled flow") and its id
 - **Page**, resolved against `siteUrl`, without the credentials a URL may carry
 - **Open in the page**: a link that opens the page with the feedback focused, once the widget's [`deepLink`](/docs/widget/configuration) option is on. It is only added for a page on `siteUrl`'s origin
+- **Component path**: the React components from the root down to the annotated element, when the widget recorded them, the 30 nearest kept and each name cut at 100 characters
 - **Annotations**: element, CSS selector and text of up to 10 annotations
 - **Author**, **Viewport**, **User agent**
 - **Screenshot**, when it has an `https` URL
+- **[Screen recording](/docs/widget/recording)**, with its media type and length: a link when its URL is `https`, carries no credentials and comes out of the redaction unchanged, quoted text otherwise
 - **Console diagnostics** and **Network diagnostics**: the first 5 entries of each, when the widget captured them
 
 Annotation fields are cut at 300 characters and diagnostic entries at 500. If the body would still pass 60,000 characters, close to GitHub's limit of 65,536, which only a crafted feedback reaches, the annotations and diagnostics are left out and a note says so.
@@ -147,7 +177,9 @@ Some things are left out:
 - Screenshots stored inline as `data:` URLs, which is what happens without a [screenshot storage](/docs/adapters/screenshot-storage). Trackers do not render them.
 - Discussion [threads](/docs/comments).
 
-Everything in the body comes from anonymous visitors, so it is quoted as code. The deep link is the only live link, and it only ever points to `siteUrl`: a visitor who sends another site's URL gets a quoted page and no link. A message can contain `@octocat`, `#12`, `<!--`, a Markdown link or an image, and none of it notifies anyone, links to another issue, hides text or loads anything. In the title, a zero-width space follows each reference sigil (`@`, `#` and `GH-`, plus GitLab's `!`, `&`, `~`, `%` and `$`) and splits each `://`, since GitLab also turns a URL pointing at an issue or merge request into a reference. A bare commit SHA is left as typed: GitLab still links it when it names one of the project's own commits.
+The flow's title and id, the component names and the recording URL first go through the redactor SitePing's [reports](/docs/mcp) use, with its defaults: tokens, keys and `password=`-like values become `[secret]`, invisible and bidi-override characters go, and line breaks are normalized. Your `redact` runs after it. A recording URL that either one changed (a pre-signed URL's `X-Amz-Signature`, say) is quoted rather than linked, since the cut link would lead nowhere.
+
+Everything in the body comes from anonymous visitors, so it is quoted as code. The deep link and the recording are the only live links, and it only ever points to `siteUrl`: a visitor who sends another site's URL gets a quoted page and no link. A message can contain `@octocat`, `#12`, `<!--`, a Markdown link or an image, and none of it notifies anyone, links to another issue, hides text or loads anything. In the title, a zero-width space follows each reference sigil (`@`, `#` and `GH-`, plus GitLab's `!`, `&`, `~`, `%` and `$`) and splits each `://`, since GitLab also turns a URL pointing at an issue or merge request into a reference. A bare commit SHA is left as typed: GitLab still links it when it names one of the project's own commits.
 
 > **Public repositories.** An issue in a public repository is public: every feedback's message, page, reviewer name, user agent, diagnostics and screenshot become readable by anyone. The screenshot is embedded from its storage URL, which `redact` does not touch. Prefer a private repository, and use `redact` for secrets that end up in URLs or console messages. To leave screenshots out, [extend the default issue](#extending-the-default-issue) with `formatIssue({ ...feedback, screenshotUrl: null }, options)`.
 
@@ -161,7 +193,7 @@ Everything in the body comes from anonymous visitors, so it is quoted as code. T
 | `siteUrl` | `string` | — | Origin of the site under review. The widget records `location.pathname` as the page URL by default, which resolves against it. The deep link only points to this origin: without `siteUrl`, issues have no deep link. It must be an absolute http(s) URL such as `https://acme.com`: anything else throws when the hooks are built, so the route module fails to load |
 | `deepLinkParam` | `string \| false` | `"siteping"` | Must match the widget's [`deepLink`](/docs/widget/configuration) `param`. `false` leaves the link out |
 | `labels` | `string[]` | `[]` | Extra labels. `siteping` is always added |
-| `redact` | `(text) => string` | none | Applied by the built-in format to the message, author, page URL, user agent, annotation text and diagnostics before they leave your server. A custom `formatIssue` gets the feedback unredacted: call `options.redact` on what you copy, or [extend the default issue](#extending-the-default-issue). To redact before the feedback is even stored, use the server's [`beforeCreate`](/docs/server#extension-points) |
+| `redact` | `(text) => string` | none | Applied by the built-in format to the message, author, page URL, user agent, annotation text, diagnostics, flow title, component names and recording URL before they leave your server. A custom `formatIssue` gets the feedback unredacted: call `options.redact` on what you copy, or [extend the default issue](#extending-the-default-issue). To redact before the feedback is even stored, use the server's [`beforeCreate`](/docs/server#extension-points) |
 | `includeAuthorEmail` | `boolean` | `false` | Add the reviewer's email next to their name |
 | `formatIssue` | `(feedback, options) => { title, body }` | built-in | Your own title and Markdown, or [the default extended](#extending-the-default-issue). The marker is still added as the first line. Quoting visitor text is then up to you |
 | `onIssueCreated` | `(feedback, issue) => void` | — | Called with each issue opened (`issue.key`, `issue.url`), to send its link to a chat or keep it, say. The visitor's `POST` waits for it, and so do the feedback's later status changes and deletes and its project's next delete, so it must not wait for one of those itself. A throw is logged like a failed creation |
@@ -169,7 +201,7 @@ Everything in the body comes from anonymous visitors, so it is quoted as code. T
 | `syncStatus` | `boolean` | `true` | Close and reopen the issue when the status changes |
 | `deletedCommentText` | `(feedbackId) => string` | ``SitePing feedback `<id>` was deleted.`` | The comment left on the issue of a deleted feedback. A retried delete finds it by a hidden first line, so the text may change from one call to the next |
 
-`createGitHubTracker` and `createGitLabTracker` also take `apiBaseUrl`, `fetch` (for a proxy or tests), `timeoutMs` (per request, default `5000`) and `maxListedPages` (default `10`, see [how issues are found again](#how-issues-are-found-again)). So do `createLinearTracker` and `createPlaneTracker`, and `createJiraTracker` but `apiBaseUrl`, which is its `siteUrl`.
+`createGitHubTracker` and `createGitLabTracker` also take `apiBaseUrl`, `fetch` (for a proxy or tests), `timeoutMs` (per request, default `5000`) and `maxListedPages` (default `10`, see [how issues are found again](#how-issues-are-found-again)). So do `createLinearTracker`, `createPlaneTracker` and `createClickUpTracker`, and `createJiraTracker` but `apiBaseUrl`, which is its `siteUrl`.
 
 Both check their options when they are called, and throw on a value that could not work: a `repository` that is not `owner/name` (a `project` that is neither an id nor a full path), an `apiBaseUrl` that is not an absolute http(s) URL or that carries credentials, a `timeoutMs` or `maxListedPages` that is not a positive integer (`Number()` of a misspelled variable is `NaN`), a `timeoutMs` over 2,147,483,647 (about 24 days, the longest delay a timer holds), or a token that is empty or has a space, a line break or an invisible character inside. The error never quotes the token, nor a refused `repository`, `project` or `apiBaseUrl`, which can carry one, as a clone URL does.
 
@@ -223,7 +255,7 @@ The built-in trackers throw two errors that a custom `logger` can tell apart: `I
 
 ## How issues are found again
 
-Each body starts with the marker `<!-- siteping-feedback {"id":"…","project":"…"} -->`, which GitHub and GitLab do not display. Linear, Jira and Plane would drop an HTML comment, so there the marker is the description's first paragraph, set as code: it shows, and the tracker keeps it as typed. Only that first line is read, so feedback text that imitates it is ignored. Edit the rest of the issue as you like, but keep that line first. The deletion comment starts the same way, with `<!-- siteping-feedback-deleted -->`: a retried delete looks for that line, not for the comment's text. Any comment that starts with it counts, whoever wrote it: on a public repository, anyone can post one to keep the deletion comment off an issue, which is still closed.
+Each body starts with the marker `<!-- siteping-feedback {"id":"…","project":"…"} -->`, which GitHub and GitLab do not display. Linear, Jira, Plane and ClickUp would drop an HTML comment, so there the marker is the description's first paragraph, set as code: it shows, and the tracker keeps it as typed. Only that first line is read, so feedback text that imitates it is ignored. Edit the rest of the issue as you like, but keep that line first. The deletion comment starts the same way, with `<!-- siteping-feedback-deleted -->`: a retried delete looks for that line, not for the comment's text. Any comment that starts with it counts, whoever wrote it: on a public repository, anyone can post one to keep the deletion comment off an issue, which is still closed.
 
 Deployments that share a repository and a project name (staging and production, or a preview that copied the production `.env`) would find each other's issues, and a project delete on staging would close production's. Give each its own `instance`: the marker then ends with `"instance":"staging"`, and the hooks only touch issues opened under the same name, an unnamed deployment only those without one. Issues opened before a deployment was named, or renamed, keep the old name.
 
@@ -290,7 +322,7 @@ export const POST = createGitHubWebhookHandler({
 ```
 
 ```ts
-// Linear, Jira and Plane read each delivery's issue back through the tracker:
+// Linear, Jira, Plane and ClickUp read each delivery's issue back through the tracker:
 import { createLinearTracker, createLinearWebhookHandler } from "@siteping/integration-issues/linear";
 
 const tracker = createLinearTracker({ teamId: process.env.LINEAR_TEAM_ID!, token: process.env.LINEAR_API_KEY! });
@@ -304,13 +336,14 @@ export const POST = createLinearWebhookHandler({ tracker, secret: process.env.LI
 | Linear | `createLinearWebhookHandler({ tracker, secret, store })` | **Settings → API → Webhooks**, the **Issues** data change events | `Linear-Signature` (hex HMAC-SHA256), and `webhookTimestamp` within `toleranceMs` (60 s) |
 | Jira | `createJiraWebhookHandler({ tracker, secret, store })` | **System → WebHooks** (admin), event *Issue updated*, a secret | `X-Hub-Signature` (`sha256=` HMAC) |
 | Plane | `createPlaneWebhookHandler({ tracker, secret, store })` | Workspace **Settings → Webhooks**, work item events | `X-Plane-Signature` (hex HMAC-SHA256) |
+| ClickUp | `createClickUpWebhookHandler({ tracker, secret, store })` | A webhook created through the API (`POST /api/v2/team/{workspace}/webhook`) on `taskStatusUpdated`, for the list; `secret` is the `secret` its creation answers | `X-Signature` (hex HMAC-SHA256 of the raw body) |
 
 A delivery is applied in four steps, and answered with a `200` saying `{ result: "updated", status }` or `{ result: "ignored", reason }`:
 
 1. **Signature.** Checked on the raw body before anything else, in constant time; a bad or missing one answers `401` and nothing is read or asked. A body past `maxBodyBytes` (5 MiB) answers `413`.
-2. **The issue.** Only a state change counts: GitHub's `closed` and `reopened`, a Linear update whose `updatedFrom` holds `stateId`, a Jira update whose changelog touches `status` or `resolution`, a Plane update of the work item's `state`. GitHub's delivery carries the issue, which must be in `repository` and labelled `siteping`, a label outsiders cannot set. Linear, Jira and Plane deliveries are only used for the issue's id: the issue is read again through `tracker` (`getIssue`), so a stale or reordered delivery applies the current state, and an issue without the `siteping` label, or outside the tracker's own team (Linear), project (Jira, Plane) or repository (GitHub), is ignored, whatever marker it carries.
+2. **The issue.** Only a state change counts: GitHub's `closed` and `reopened`, a Linear update whose `updatedFrom` holds `stateId`, a Jira update whose changelog touches `status` or `resolution`, a Plane update of the work item's `state`, a ClickUp `taskStatusUpdated`. GitHub's delivery carries the issue, which must be in `repository` and labelled `siteping`, a label outsiders cannot set. Linear, Jira, Plane and ClickUp deliveries are only used for the issue's id: the issue is read again through `tracker` (`getIssue`), so a stale or reordered delivery applies the current state, and an issue without the `siteping` label (tag on ClickUp), or outside the tracker's own team (Linear), project (Jira, Plane), list and workspace (ClickUp) or repository (GitHub), is ignored, whatever marker it carries.
 3. **The link.** The feedback is the one the marker on the issue's first line names, and only when `verifyProjectOwnership` confirms it belongs to the marker's project, and the marker's instance is the handler's `instance`. A marker anywhere else in the body is visitor text and is ignored.
-4. **The status.** A closed issue resolves the feedback, as `wont_fix` when the tracker says it was not planned (GitHub's *not planned*, a canceled Linear state, a cancelled Plane state, a Jira resolution such as *Won't Do*, see `wontFixPattern`); a reopened one sets it back to `open`. With a store implementing `getFeedback` ([memory](/docs/adapters/memory) does), the current status is read first and a feedback that already agrees is left alone: an `in_progress` feedback stays so when its issue reopens, and a `wont_fix` one when its Jira issue is plain *Done*. That is also what stops the echo, as the hooks' own close or reopen comes back through the webhook. Without `getFeedback`, each change is applied: a reopen sets `open` over `in_progress`, and a close stamps `resolvedAt` again.
+4. **The status.** A closed issue resolves the feedback, as `wont_fix` when the tracker says it was not planned (GitHub's *not planned*, a canceled Linear state, a cancelled Plane state, a Jira resolution such as *Won't Do*, see `wontFixPattern`, the ClickUp status named `statuses.wont_fix`); a reopened one sets it back to `open`. With a store implementing `getFeedback` ([memory](/docs/adapters/memory) does), the current status is read first and a feedback that already agrees is left alone: an `in_progress` feedback stays so when its issue reopens, and a `wont_fix` one when its Jira issue is plain *Done*. That is also what stops the echo, as the hooks' own close or reopen comes back through the webhook. Without `getFeedback`, each change is applied: a reopen sets `open` over `in_progress`, and a close stamps `resolvedAt` again.
 
 The store write is `store.updateFeedback`, outside the HTTP handler: its hooks, webhooks and `notifyReporter` do not run. Pass `onStatusSynced(feedback, { tracker, issue, previousStatus, status })` to react, with the same function as the server's [`notifyReporter`](/docs/server#notifying-the-reporter) for instance; a throw there is logged and the delivery still answers `200`. A store that fails answers `500`, and the tracker retries. `instance`, `logger` and `maxBodyBytes` work as elsewhere.
 

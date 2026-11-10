@@ -4,7 +4,7 @@
 
 # @siteping/integration-issues
 
-One GitHub, GitLab, Linear, Jira or Plane issue per [SitePing](https://github.com/NeosiaNexus/SitePing) feedback, opened, closed and reopened along with it through `@siteping/server` lifecycle hooks, and webhook handlers that sync an issue closed or reopened on the tracker back to its feedback. No database column: the issue's first line links it to its feedback. Any other tracker plugs in through the `IssueTracker` interface.
+One GitHub, GitLab, Linear, Jira, Plane or ClickUp issue per [SitePing](https://github.com/NeosiaNexus/SitePing) feedback, opened, closed and reopened along with it through `@siteping/server` lifecycle hooks, and webhook handlers that sync an issue closed or reopened on the tracker back to its feedback. No database column: the issue's first line links it to its feedback. Any other tracker plugs in through the `IssueTracker` interface.
 
 **[Documentation](https://siteping.dev/docs/issue-trackers)**
 
@@ -23,7 +23,8 @@ import { createSitepingHandler } from "@siteping/server";
 import { createIssueTrackerHooks } from "@siteping/integration-issues";
 import { createGitHubTracker } from "@siteping/integration-issues/github";
 // or: createGitLabTracker from "/gitlab", createLinearTracker from "/linear",
-//     createJiraTracker from "/jira", createPlaneTracker from "/plane"
+//     createJiraTracker from "/jira", createPlaneTracker from "/plane",
+//     createClickUpTracker from "/clickup"
 
 export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({
   store,
