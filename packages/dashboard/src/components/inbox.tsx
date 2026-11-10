@@ -1,11 +1,11 @@
 import { type FeedbackStatus, intlLocale } from "@siteping/core";
 import type { CSSProperties, ReactElement, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useCallback, useEffect, useInsertionEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useInsertionEffect, useMemo, useRef, useState } from "react";
 import { recordPageUrl } from "../format.js";
 import { createT, getStatusLabel, loadLocale, tWithParams } from "../i18n/index.js";
 import { ensureStyles } from "../inject-styles.js";
 import { normalizeAccent, resolveInitialTheme, watchSystemTheme } from "../theme.js";
-import type { SitepingInboxProps } from "../types.js";
+import type { InboxRecord, SitepingInboxProps } from "../types.js";
 import { useSitepingInbox } from "../use-inbox.js";
 import type { InboxUiContextValue } from "./context.js";
 import { InboxUiProvider } from "./context.js";
@@ -17,6 +17,16 @@ import { Skeleton } from "./skeleton.js";
 import type { ToastData } from "./toast.js";
 import { Toast } from "./toast.js";
 import { Toolbar } from "./toolbar.js";
+
+// The export dialog (and the report formatter it runs) loads on first use: the
+// inbox's first load carries only the buttons that open it.
+const ExportDialog = lazy(() => import("./export-dialog.js").then((module) => ({ default: module.ExportDialog })));
+
+/** What the export dialog shows: one record, or the loaded list to pick from. */
+interface ExportTarget {
+  records: readonly InboxRecord[];
+  multiple: boolean;
+}
 
 /** Container width (px) at which the drawer switches from overlay to side-by-side. Mirrors the CSS `@container spd (min-width: 960px)`. */
 const SIDE_BY_SIDE_MIN = 960;
@@ -198,6 +208,10 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
     wasLoading.current = state.loading;
   }, [state.loading, state.total, state.items.length, t]);
 
+  // ----- export dialog
+  const [exporting, setExporting] = useState<ExportTarget | null>(null);
+  const closeExport = useCallback(() => setExporting(null), []);
+
   // ----- keyboard
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -364,7 +378,11 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
         tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
-        <Toolbar state={state} searchRef={searchRef} />
+        <Toolbar
+          state={state}
+          searchRef={searchRef}
+          onExport={() => setExporting({ records: state.items, multiple: true })}
+        />
         <div className="spd-body">
           <div className="spd-list-pane">
             {showSkeleton ? (
@@ -417,6 +435,9 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
               // Failures show in the thread itself, next to the kept draft.
               onAddComment={state.addComment}
               onDeleteComment={state.deleteComment}
+              onExport={() => {
+                if (state.opened) setExporting({ records: [state.opened], multiple: false });
+              }}
             />
           ) : null}
         </div>
@@ -455,6 +476,11 @@ export function SitepingInbox(props: SitepingInboxProps): ReactElement {
           }}
           onDismiss={dismissToast}
         />
+        {exporting ? (
+          <Suspense fallback={null}>
+            <ExportDialog records={exporting.records} multiple={exporting.multiple} onClose={closeExport} />
+          </Suspense>
+        ) : null}
         {shortcutsOpen ? (
           <ShortcutsOverlay canChangeStatus={canChangeStatus} onClose={() => setShortcutsOpen(false)} />
         ) : null}

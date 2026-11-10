@@ -90,6 +90,33 @@ export interface Translations {
   "shortcuts.title": string;
   "shortcuts.close": string;
 
+  // Export dialog — closing reuses "shortcuts.close", the copy toast "inbox.copied"
+  "export.open": string;
+  "export.title": string;
+  "export.format": string;
+  "export.formatText": string;
+  "export.formatPrompt": string;
+  "export.sections": string;
+  "export.section.location": string;
+  "export.section.environment": string;
+  "export.section.screenshot": string;
+  "export.section.console": string;
+  "export.section.network": string;
+  "export.section.thread": string;
+  "export.section.author": string;
+  "export.redact": string;
+  "export.redact.secrets": string;
+  "export.redact.emails": string;
+  "export.redact.queryStrings": string;
+  "export.redact.authorName": string;
+  "export.redact.userAgent": string;
+  "export.selectedCount": string;
+  "export.selectAll": string;
+  "export.preview": string;
+  "export.nothingSelected": string;
+  "export.copy": string;
+  "export.download": string;
+
   // Relative time
   "time.now": string;
   "time.minutes": string;

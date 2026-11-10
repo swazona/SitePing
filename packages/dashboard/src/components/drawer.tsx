@@ -7,7 +7,7 @@ import type { InboxRecord, InboxSiteUrl, InboxState } from "../types.js";
 import { STATUS_ICONS, trapTab, useInboxUi } from "./context.js";
 import { Diagnostics } from "./diagnostics.js";
 import { EvidenceCard } from "./evidence-card.js";
-import { CloseIcon, ExternalIcon, TrashIcon } from "./icons.js";
+import { CloseIcon, ExportIcon, ExternalIcon, TrashIcon } from "./icons.js";
 import { StatusMenu } from "./status-menu.js";
 import { Thread } from "./thread.js";
 
@@ -27,6 +27,8 @@ interface DrawerProps {
   commentPermissionsOf: InboxState["commentPermissionsOf"];
   onAddComment: (id: string, body: string, clientId: string) => Promise<void>;
   onDeleteComment: (id: string, commentId: string) => Promise<void>;
+  /** Open the export dialog for this record. */
+  onExport: () => void;
 }
 
 /**
@@ -47,6 +49,7 @@ export function Drawer({
   commentPermissionsOf,
   onAddComment,
   onDeleteComment,
+  onExport,
 }: DrawerProps): ReactElement {
   const { t, locale, focusList } = useInboxUi();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -122,6 +125,15 @@ export function Drawer({
               {getStatusLabel(record.status, t)}
             </span>
           )}
+          <button
+            type="button"
+            className="spd-icon-btn"
+            aria-label={t("export.open")}
+            title={t("export.open")}
+            onClick={onExport}
+          >
+            <ExportIcon />
+          </button>
           <button
             ref={closeRef}
             type="button"

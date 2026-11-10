@@ -33,6 +33,7 @@ function renderDrawer(recordOverrides = {}, permissions: Partial<FeedbackPermiss
       commentPermissionsOf={() => ({ canDelete: permissions.canDeleteComment ?? false })}
       onAddComment={onAddComment}
       onDeleteComment={vi.fn(async () => {})}
+      onExport={vi.fn()}
     />,
   );
   return { record, container, onAddComment };
@@ -131,7 +132,8 @@ describe("Drawer — focus trap", () => {
     const { container } = renderDrawer({}, { canChangeStatus: false }, overlay);
     return {
       panel: container.querySelector(".spd-drawer") as HTMLElement,
-      first: container.querySelector(".spd-drawer-close") as HTMLElement,
+      // The export button opens the header, before the close button.
+      first: container.querySelector(".spd-drawer-head button") as HTMLElement,
       last: container.querySelector(".spd-drawer-foot a") as HTMLElement,
     };
   }

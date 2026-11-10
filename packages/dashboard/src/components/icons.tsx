@@ -138,3 +138,14 @@ export function CheckIcon({ className }: IconProps): ReactElement {
     </svg>
   );
 }
+
+/** ⇩ into a tray — export. */
+export function ExportIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg {...SVG} aria-hidden="true" className={className}>
+      <path d="M8 2.5v7.5" />
+      <path d="m5 7 3 3 3-3" />
+      <path d="M2.5 10.5v1.5A1.5 1.5 0 0 0 4 13.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.5" />
+    </svg>
+  );
+}

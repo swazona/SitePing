@@ -1,7 +1,7 @@
 import type { ReactElement, RefObject } from "react";
 import type { InboxState } from "../types.js";
 import { useInboxUi } from "./context.js";
-import { RefreshIcon } from "./icons.js";
+import { ExportIcon, RefreshIcon } from "./icons.js";
 import { ProjectSwitcher } from "./project-switcher.js";
 import { SearchInput } from "./search-input.js";
 import { StatusTabs } from "./status-tabs.js";
@@ -10,10 +10,12 @@ import { TypeFilter } from "./type-filter.js";
 interface ToolbarProps {
   state: InboxState;
   searchRef: RefObject<HTMLInputElement | null>;
+  /** Open the export dialog over the loaded list. */
+  onExport: () => void;
 }
 
-/** Fixed 48px toolbar: project switcher (multi-project only), status tabs, type filter, search, refresh. */
-export function Toolbar({ state, searchRef }: ToolbarProps): ReactElement {
+/** Fixed 48px toolbar: project switcher (multi-project only), status tabs, type filter, search, export, refresh. */
+export function Toolbar({ state, searchRef, onExport }: ToolbarProps): ReactElement {
   const { t } = useInboxUi();
   return (
     <div className="spd-toolbar">
@@ -24,6 +26,16 @@ export function Toolbar({ state, searchRef }: ToolbarProps): ReactElement {
       <div className="spd-toolbar-spacer" />
       <TypeFilter type={state.type} onChange={state.setTypeFilter} />
       <SearchInput value={state.search} onChange={state.setSearch} inputRef={searchRef} />
+      <button
+        type="button"
+        className="spd-icon-btn"
+        aria-label={t("export.open")}
+        title={t("export.open")}
+        disabled={state.items.length === 0}
+        onClick={onExport}
+      >
+        <ExportIcon />
+      </button>
       <button
         type="button"
         className={`spd-icon-btn spd-refresh${state.loading ? " spd-spin" : ""}`}
