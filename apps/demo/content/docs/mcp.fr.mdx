@@ -96,7 +96,7 @@ Tout ce que renvoie un outil passe par le même masquage que l'[export](/fr/docs
 
 | Outil | Ce qu'il fait |
 |---|---|
-| `list_feedback` | Du plus récent au plus ancien : id, type, statut, date, URL de la page, un extrait du message (280 caractères), le sélecteur de l'élément annoté, le nombre de réponses et la présence d'une capture |
+| `list_feedback` | Du plus récent au plus ancien : id, type, statut, date, URL de la page, un extrait du message (280 caractères), le sélecteur de l'élément annoté et son composant React le plus proche, le [parcours](/fr/docs/widget/flows) dont il est une étape (id, étape, titre), le nombre de réponses et la présence d'une capture ou d'un [enregistrement d'écran](/fr/docs/widget/recording) |
 | `get_feedback` | Un feedback avec tout ce qu'on sait de lui, rendu par défaut comme un prompt IA |
 | `get_screenshot` | La capture prise par le widget, en contenu image |
 | `update_status` | Passer à `open`, `in_progress`, `resolved` ou `wont_fix` |

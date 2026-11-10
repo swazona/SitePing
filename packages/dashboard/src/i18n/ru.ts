@@ -104,6 +104,7 @@ export const ru: Translations = {
   "export.section.location": "Страница и элемент",
   "export.section.environment": "Браузер и окно",
   "export.section.screenshot": "Ссылка на скриншот",
+  "export.section.recording": "Ссылка на запись",
   "export.section.console": "Ошибки консоли",
   "export.section.network": "Неудачные запросы",
   "export.section.thread": "Ответы",

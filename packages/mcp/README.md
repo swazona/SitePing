@@ -4,7 +4,7 @@
 
 # @siteping/mcp
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for [SitePing](https://github.com/NeosiaNexus/SitePing): your AI coding agent lists the feedback reviewers left on your site, reads one with its full context (page, element, browser, console errors, failed requests, thread, screenshot), fixes it in the code, replies to the reviewer and resolves it. It talks to your `@siteping/server` endpoint over HTTP with its API key.
+A [Model Context Protocol](https://modelcontextprotocol.io) server for [SitePing](https://github.com/NeosiaNexus/SitePing): your AI coding agent lists the feedback reviewers left on your site, reads one with its full context (page, element and React component path, multi-page flow, browser, console errors, failed requests, thread, screenshot, screen recording link), fixes it in the code, replies to the reviewer and resolves it. It talks to your `@siteping/server` endpoint over HTTP with its API key.
 
 **[Documentation](https://siteping.dev/docs/mcp)**
 

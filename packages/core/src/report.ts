@@ -78,6 +78,10 @@ export interface ReportFeedbackInput {
   comments?: readonly ReportCommentInput[] | undefined;
   screenshotUrl?: string | null | undefined;
   diagnostics?: DiagnosticsSnapshot | null | undefined;
+  /** The multi-page flow the feedback is a step of — `null` or absent outside one. */
+  flowId?: string | null | undefined;
+  flowStep?: number | null | undefined;
+  flowTitle?: string | null | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +100,7 @@ export const REPORT_SECTIONS = [
   "location",
   "environment",
   "screenshot",
+  "recording",
   "console",
   "network",
   "thread",
@@ -113,6 +118,7 @@ export const REDACTABLE_FIELDS = [
   "userAgent",
   "viewport",
   "screenshotUrl",
+  "recordingUrl",
 ] as const;
 export type RedactableField = (typeof REDACTABLE_FIELDS)[number];
 
@@ -158,6 +164,22 @@ export interface ReportAnchor {
   scroll: { x: number; y: number };
 }
 
+/** The multi-page flow a feedback is a step of. */
+export interface ReportFlow {
+  id: string;
+  /** The step's position in the flow, from 1. */
+  step: number;
+  /** What the reviewer called the flow; `null` for an untitled one. */
+  title: string | null;
+}
+
+/** The screen recording attached to a feedback. */
+export interface ReportRecording {
+  url: string;
+  mimeType: string;
+  durationMs: number;
+}
+
 export interface ReportComment {
   author: string;
   role: CommentAuthorRole;
@@ -174,11 +196,21 @@ export interface FeedbackReport {
   createdAt: string;
   resolvedAt: string | null;
   message: string;
+  /** The multi-page flow the feedback is a step of, `null` outside one. */
+  flow: ReportFlow | null;
   author?: { name: string; email: string };
-  location?: { url: string; urlPattern: string | null; anchors: ReportAnchor[] };
+  location?: {
+    url: string;
+    urlPattern: string | null;
+    anchors: ReportAnchor[];
+    /** React component names from the root down to the annotated element; empty when not captured. */
+    components: string[];
+  };
   environment?: { viewport: string; userAgent: string };
   /** `null` when the feedback has none; `"[inline image]"` for an inline data URL. */
   screenshotUrl?: string | null;
+  /** `null` when the feedback has none. */
+  recording?: ReportRecording | null;
   /** Console errors and warnings. */
   console?: ConsoleDiagnosticEntry[];
   /** Failed requests. */
@@ -333,7 +365,15 @@ export function buildFeedbackReport(feedback: ReportFeedbackInput, options: Repo
     createdAt: normalizeText(toIso(feedback.createdAt)),
     resolvedAt: feedback.resolvedAt ? normalizeText(toIso(feedback.resolvedAt)) : null,
     message: r.text(feedback.message),
+    flow: feedback.flowId
+      ? {
+          id: normalizeText(feedback.flowId),
+          step: feedback.flowStep ?? Number.NaN,
+          title: feedback.flowTitle ? r.text(feedback.flowTitle) : null,
+        }
+      : null,
   };
+  const diagnostics = feedback.diagnostics ?? null;
   if (isOn(options, "author")) {
     report.author = {
       name: field("authorName", feedback.authorName),
@@ -358,6 +398,7 @@ export function buildFeedbackReport(feedback: ReportFeedbackInput, options: Repo
         },
         scroll: { x: annotation.scrollX, y: annotation.scrollY },
       })),
+      components: (diagnostics?.components ?? []).map((name) => r.text(name)),
     };
   }
   if (isOn(options, "environment")) {
@@ -371,7 +412,16 @@ export function buildFeedbackReport(feedback: ReportFeedbackInput, options: Repo
     report.screenshotUrl =
       url === null ? null : url.startsWith("data:") ? "[inline image]" : field("screenshotUrl", url, "url");
   }
-  const diagnostics = feedback.diagnostics ?? null;
+  if (isOn(options, "recording")) {
+    const recording = diagnostics?.recording;
+    report.recording = recording
+      ? {
+          url: field("recordingUrl", recording.url, "url"),
+          mimeType: normalizeText(recording.mimeType),
+          durationMs: recording.durationMs,
+        }
+      : null;
+  }
   if (isOn(options, "console")) {
     report.console = (diagnostics?.console ?? [])
       .filter((entry) => entry.level === "error" || entry.level === "warn")
@@ -474,6 +524,14 @@ function pct(value: number): string {
   return Number.isFinite(value) ? `${Math.round(value * 1000) / 10}%` : "?";
 }
 
+/** Media types a recording is printed with as is. */
+const RECORDING_TYPES: ReadonlySet<string> = new Set(["video/webm", "video/mp4"]);
+
+/** A duration in milliseconds, as seconds. */
+function seconds(ms: number): string {
+  return Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms / 100) / 10} s` : "? s";
+}
+
 function oneLine(value: string): string {
   return flatten(value);
 }
@@ -503,6 +561,11 @@ function printers(quote: Quote) {
     capture: ({ viewport, scroll }: ReportAnchor) =>
       `viewport ${num(viewport.width)}×${num(viewport.height)} @${num(viewport.devicePixelRatio)}x, scrolled to (${num(scroll.x)}, ${num(scroll.y)})`,
     screenshot: (url: string) => quote(url === "[inline image]" ? "inline image (not included)" : url),
+    flow: (flow: ReportFlow) =>
+      `step ${Number.isInteger(flow.step) && flow.step > 0 ? flow.step : "?"} of ${flow.title === null ? "an untitled flow" : quote(flow.title)} (${SAFE_ID.test(flow.id) ? flow.id : quote(flow.id)})`,
+    components: (names: readonly string[]) => names.map(quote).join(" › "),
+    recording: (recording: ReportRecording) =>
+      `${quote(recording.url)} (${RECORDING_TYPES.has(recording.mimeType) ? recording.mimeType : quote(recording.mimeType)}, ${seconds(recording.durationMs)})`,
   };
 }
 
@@ -522,6 +585,7 @@ function renderMarkdown(report: FeedbackReport, heading: string, messageHeading 
     h(0, heading),
     `**Type:** ${p.type(report.type)} · **Status:** ${p.status(report.status)} · **Project:** ${code(report.project)} · **Submitted:** ${p.date(report.createdAt)}` +
       (report.resolvedAt ? ` · **Closed:** ${p.date(report.resolvedAt)}` : ""),
+    ...(report.flow ? [`**Flow:** ${p.flow(report.flow)}`] : []),
     "",
     h(1, messageHeading),
     fenced(report.message),
@@ -543,6 +607,9 @@ function renderMarkdown(report: FeedbackReport, heading: string, messageHeading 
       );
     });
     if (anchors.length === 0) out.push("- **Annotation:** none (page-level feedback)");
+    if (report.location.components.length > 0) {
+      out.push(`- **Component path:** ${p.components(report.location.components)}`);
+    }
   }
 
   if (report.environment) {
@@ -555,6 +622,7 @@ function renderMarkdown(report: FeedbackReport, heading: string, messageHeading 
   }
 
   if (report.screenshotUrl) out.push("", h(1, "Screenshot"), `- ${p.screenshot(report.screenshotUrl)}`);
+  if (report.recording) out.push("", h(1, "Screen recording"), `- ${p.recording(report.recording)}`);
 
   if (report.console && report.console.length > 0) {
     out.push("", h(1, "Console errors"));
@@ -598,6 +666,7 @@ function renderText(report: FeedbackReport): string {
     `${p.type(report.type).toUpperCase()} #${p.id(report.id)}`,
     `Type: ${p.type(report.type)} | Status: ${p.status(report.status)} | Project: ${oneLine(report.project)}`,
     `Submitted: ${p.date(report.createdAt)}${report.resolvedAt ? ` | Closed: ${p.date(report.resolvedAt)}` : ""}`,
+    ...(report.flow ? [`Flow: ${p.flow(report.flow)}`] : []),
     "",
     "MESSAGE",
     gutter(report.message),
@@ -617,6 +686,9 @@ function renderText(report: FeedbackReport): string {
         `    Captured at: ${p.capture(anchor)}`,
       );
     });
+    if (report.location.components.length > 0) {
+      out.push(`  Component path: ${p.components(report.location.components)}`);
+    }
   }
   if (report.environment) {
     out.push(
@@ -627,6 +699,7 @@ function renderText(report: FeedbackReport): string {
     );
   }
   if (report.screenshotUrl) out.push("", "SCREENSHOT", `  ${p.screenshot(report.screenshotUrl)}`);
+  if (report.recording) out.push("", "SCREEN RECORDING", `  ${p.recording(report.recording)}`);
   if (report.console && report.console.length > 0) {
     out.push("", "CONSOLE ERRORS");
     for (const entry of report.console) {
@@ -685,6 +758,16 @@ function renderPrompt(reports: readonly FeedbackReport[]): string {
     "",
     ...types.map((type) => `- ${several ? `${MD.type(type)}: ` : ""}${labelOf(TASKS, type) ?? TASKS.other}`),
     "- Locate the code that renders the page and element described under Location — the selector, XPath and element text identify it; the viewport tells you which breakpoint the reviewer saw.",
+    ...(reports.some((report) => (report.location?.components.length ?? 0) > 0)
+      ? [
+          "- The component path names the React components from the root down to the annotated element: start the search there.",
+        ]
+      : []),
+    ...(reports.some((report) => report.flow)
+      ? [
+          "- A feedback marked as a step of a flow is one stop of a walk-through across pages: the other steps of the same flow give it context.",
+        ]
+      : []),
     "- Use the console errors and failed requests, when there are any, as leads, not as proof.",
     "- Keep the change minimal and focused on what was reported.",
     "- Finish with a short summary of the cause and of what you changed, or of what is still unclear.",

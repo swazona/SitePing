@@ -105,6 +105,7 @@ export const it: Translations = {
   "export.section.location": "Pagina ed elemento",
   "export.section.environment": "Browser e viewport",
   "export.section.screenshot": "Link allo screenshot",
+  "export.section.recording": "Link alla registrazione",
   "export.section.console": "Errori della console",
   "export.section.network": "Richieste non riuscite",
   "export.section.thread": "Risposte",

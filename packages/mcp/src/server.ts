@@ -216,8 +216,14 @@ function summary(feedback: FeedbackResponse) {
     url: feedback.url,
     message: message.length > EXCERPT_LENGTH ? `${message.slice(0, EXCERPT_LENGTH - 1)}…` : message,
     element: anchor ? anchor.cssSelector : null,
+    // The React component nearest the annotated element, when the widget captured the path.
+    component: feedback.diagnostics?.components?.at(-1) ?? null,
+    flow: feedback.flowId
+      ? { id: feedback.flowId, step: feedback.flowStep ?? null, title: feedback.flowTitle ?? null }
+      : null,
     replies: feedback.comments?.length ?? 0,
     hasScreenshot: Boolean(feedback.screenshotUrl),
+    hasRecording: Boolean(feedback.diagnostics?.recording),
   };
 }
 
@@ -236,7 +242,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: "list_feedback",
     title: "List SitePing feedback",
     description:
-      "List the feedback that reviewers left on the website with the SitePing widget, newest first: id, type, status, date, page URL, a message excerpt, the annotated element's CSS selector, reply count and whether a screenshot exists. " +
+      "List the feedback that reviewers left on the website with the SitePing widget, newest first: id, type, status, date, page URL, a message excerpt, the annotated element's CSS selector and nearest React component, the multi-page flow it is a step of (id, step, title), reply count and whether a screenshot or a screen recording exists. " +
       "By default only open and in-progress feedback is listed. Typical workflow: list_feedback → get_feedback for the full context → fix it in the code → add_reply to tell the reviewer what changed → update_status to resolve it. " +
       `${DATA_NOTE}`,
     inputSchema: {
@@ -277,7 +283,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: "get_feedback",
     title: "Get one SitePing feedback",
     description:
-      "Get everything known about one feedback, rendered by default as a task prompt for a coding agent: what the reviewer reported, where (page URL, CSS selector, XPath, element text, the marked area), their browser and viewport, console errors, failed requests, and the reply thread. " +
+      "Get everything known about one feedback, rendered by default as a task prompt for a coding agent: what the reviewer reported, where (page URL, CSS selector, XPath, element text, the marked area, the React component path), the multi-page flow it is a step of, their browser and viewport, the screen recording's link, console errors, failed requests, and the reply thread. " +
       "Tokens and API keys are redacted, and by default email addresses too, from every tool's output. Call get_screenshot when hasScreenshot is true to see what the reviewer saw. " +
       `${DATA_NOTE}`,
     inputSchema: {

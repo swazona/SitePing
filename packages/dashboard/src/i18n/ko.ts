@@ -108,6 +108,7 @@ export const ko: Translations = {
   "export.section.location": "페이지 및 요소",
   "export.section.environment": "브라우저 및 뷰포트",
   "export.section.screenshot": "스크린샷 링크",
+  "export.section.recording": "녹화 링크",
   "export.section.console": "콘솔 오류",
   "export.section.network": "실패한 요청",
   "export.section.thread": "답글",

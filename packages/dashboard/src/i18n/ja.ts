@@ -108,6 +108,7 @@ export const ja: Translations = {
   "export.section.location": "ページと要素",
   "export.section.environment": "ブラウザとビューポート",
   "export.section.screenshot": "スクリーンショットのリンク",
+  "export.section.recording": "録画のリンク",
   "export.section.console": "コンソールエラー",
   "export.section.network": "失敗したリクエスト",
   "export.section.thread": "返信",

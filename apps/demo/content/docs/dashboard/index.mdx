@@ -102,7 +102,7 @@ The export button (the tray arrow) turns feedback into a report you can paste in
 | AI prompt | Markdown framed as a task for a coding agent: what to look for, where, and what to report back |
 | JSON | The report as data — one object, or an array for several feedbacks |
 
-**Include** switches sections off: page and element (URL, selector, XPath, element text, the marked area, the viewport it was marked in), browser and viewport, the screenshot link, console errors and warnings (other console levels never go in), failed requests, replies, and the author. The message, type, status and dates are always there. An inline screenshot is noted, never embedded.
+**Include** switches sections off: page and element (URL, selector, XPath, element text, the marked area, the viewport it was marked in, the React component path when the widget captured one), browser and viewport, the screenshot link, the [screen recording](/docs/widget/recording) link, console errors and warnings (other console levels never go in), failed requests, replies, and the author. The message, type, status and dates are always there, and so is the [flow](/docs/widget/flows) a feedback is a step of: its title and step number. An inline screenshot is noted, never embedded.
 
 **Redact** replaces what should not leave the inbox: tokens and keys (on by default — bearer tokens, JWTs, Stripe, OpenAI, Anthropic, GitHub, GitLab, Slack, AWS and Google key formats, and the values of `token=` / `password:` / `api_key=`-like assignments and URL parameters), email addresses, URL query strings, the names of the author and of everyone in the thread, and the user agent. Redaction matches patterns: read a report before you share it.
 

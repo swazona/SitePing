@@ -29,6 +29,8 @@ interface Seed {
   at: string;
   screenshotDataUrl?: string;
   projectName?: string;
+  /** More body fields: flow fields, diagnostics. */
+  extra?: Record<string, unknown>;
 }
 
 let seq = 0;
@@ -36,7 +38,15 @@ let seq = 0;
 /** An in-process @siteping/server over a MemoryStore, plus a fetch that routes to it. */
 function stack(redact?: SitepingRedactionPolicy) {
   const store = new MemoryStore();
-  const handler = createSitepingHandler({ store, apiKey: API_KEY });
+  const handler = createSitepingHandler({
+    store,
+    apiKey: API_KEY,
+    // Owns the recording URLs seeds name, so a feedback keeps them.
+    recordingStorage: {
+      upload: async () => ({ url: "https://cdn.example/rec/uploaded.webm" }),
+      isOwnUrl: (url) => url.startsWith("https://cdn.example/rec/"),
+    },
+  });
   const requests: Request[] = [];
   const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
@@ -94,6 +104,7 @@ function stack(redact?: SitepingRedactionPolicy) {
             console: [{ level: "error", timestamp: entry.at, message: "TypeError: price is undefined" }],
             network: [],
           },
+          ...entry.extra,
         }),
       }),
     );
@@ -238,6 +249,60 @@ describe("protocol", () => {
     });
     expect(notObject).toMatchObject({ result: { isError: true } });
   });
+});
+
+describe("flows, component paths and recordings", () => {
+  const extra = {
+    flowId: "flow-1",
+    flowStep: 2,
+    flowTitle: "Checkout token=sekr3t by bob@client.example",
+    diagnostics: {
+      console: [],
+      network: [],
+      components: ["App", "Checkout", "PayButton api_key=k3y"],
+      recording: {
+        url: "https://cdn.example/rec/1.webm?token=sekr3t",
+        mimeType: "video/webm",
+        durationMs: 4200,
+        bytes: 10,
+      },
+    },
+  };
+
+  it("lists each feedback's flow, nearest component and recording, redacted", async () => {
+    const { server, seed } = stack();
+    const id = await seed({ message: "Pay fails", at: "2026-07-01T10:00:00Z", extra });
+    await seed({ message: "Plain", at: "2026-07-02T10:00:00Z" });
+    const result = await call(server, "list_feedback");
+    const [plain, stepped] = (result.structuredContent as { feedbacks: Array<Record<string, unknown>> }).feedbacks;
+    expect(stepped).toMatchObject({
+      id,
+      component: "PayButton api_key=[secret]",
+      flow: { id: "flow-1", step: 2, title: "Checkout token=[secret] by [email]" },
+      hasRecording: true,
+    });
+    expect(plain).toMatchObject({ component: null, flow: null, hasRecording: false });
+    expect(textOf(result)).not.toMatch(/sekr3t|k3y|bob@/);
+  });
+
+  it.each(["prompt", "markdown", "text", "json"] as const)(
+    "get_feedback shows them in %s, through the same redaction",
+    async (format) => {
+      const { server, seed } = stack();
+      const id = await seed({ message: "Pay fails", at: "2026-07-01T10:00:00Z", extra });
+      const result = await call(server, "get_feedback", { id, format });
+      const text = textOf(result);
+      expect(text).toContain("Checkout token=[secret] by [email]");
+      expect(text).toContain("PayButton api_key=[secret]");
+      expect(text).toContain("https://cdn.example/rec/1.webm?token=[secret]");
+      expect(text).not.toMatch(/sekr3t|k3y|bob@/);
+      expect(result.structuredContent).toMatchObject({
+        flow: { id: "flow-1", step: 2 },
+        recording: { mimeType: "video/webm", durationMs: 4200 },
+      });
+      expect(JSON.stringify(result.structuredContent)).not.toMatch(/sekr3t|k3y|bob@/);
+    },
+  );
 });
 
 describe("list_feedback", () => {

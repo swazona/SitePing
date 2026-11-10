@@ -112,6 +112,7 @@ export interface Translations {
   "export.section.location": string;
   "export.section.environment": string;
   "export.section.screenshot": string;
+  "export.section.recording": string;
   "export.section.console": string;
   "export.section.network": string;
   "export.section.thread": string;

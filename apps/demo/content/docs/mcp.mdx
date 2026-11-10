@@ -96,7 +96,7 @@ Everything a tool returns goes through the same redaction as the dashboard's [Ex
 
 | Tool | What it does |
 |---|---|
-| `list_feedback` | Newest first: id, type, status, date, page URL, a message excerpt (280 characters), the annotated element's selector, the reply count and whether there is a screenshot |
+| `list_feedback` | Newest first: id, type, status, date, page URL, a message excerpt (280 characters), the annotated element's selector and nearest React component, the [flow](/docs/widget/flows) it is a step of (id, step, title), the reply count and whether there is a screenshot or a [screen recording](/docs/widget/recording) |
 | `get_feedback` | One feedback with everything known about it, rendered as an AI prompt by default |
 | `get_screenshot` | The screenshot the widget captured, as image content |
 | `update_status` | Set `open`, `in_progress`, `resolved` or `wont_fix` |
