@@ -1,6 +1,6 @@
 /**
- * In-memory stand-ins for the Linear (GraphQL), Jira Cloud (REST v3) and
- * Plane (REST v1) APIs, injected as `fetch`. They implement only what the
+ * In-memory stand-ins for the Linear (GraphQL), Jira Cloud (REST v3),
+ * Plane (REST v1) and ClickUp (API v2) APIs, injected as `fetch`. They implement only what the
  * trackers call, in the request/response shapes of the real APIs as far as
  * their public docs describe them, and record every request.
  */
@@ -9,16 +9,18 @@ import { adfToText, htmlToText } from "../src/core/rich-text.js";
 export interface SaasIssue {
   key: string;
   title: string;
-  /** Description in the tracker's own format: Markdown (Linear), ADF (Jira), HTML (Plane). */
+  /** Description in the tracker's own format: Markdown (Linear, ClickUp), ADF (Jira), HTML (Plane). */
   description: unknown;
   labels: string[];
-  /** Linear state type, Jira status category, Plane state group. */
+  /** Linear state type, Jira status category, Plane state group, ClickUp status name. */
   stateKind: string;
   /** Jira only: the resolution of a done issue. */
   resolution?: string | null;
   comments: unknown[];
-  /** The issue's team id (Linear), project key (Jira) or project id (Plane), when not the fake's own. */
+  /** The issue's team id (Linear), project key (Jira), project id (Plane) or list id (ClickUp), when not the fake's own. */
   scope?: string;
+  /** ClickUp only: the task's workspace id, when not the fake's own. */
+  workspace?: string;
 }
 
 export interface SaasFake {
@@ -396,5 +398,119 @@ export function createFakePlane(
     labels,
     descriptionText: (issue) => htmlToText(String(issue.description)),
     commentText: (comment) => htmlToText(String(comment)),
+  };
+}
+
+// --- ClickUp ---
+
+export const CLICKUP_STATUSES = [
+  { status: "to do", type: "open", orderindex: 0 },
+  { status: "in progress", type: "custom", orderindex: 1 },
+  { status: "won't fix", type: "done", orderindex: 2 },
+  { status: "complete", type: "closed", orderindex: 3 },
+];
+
+/** Plain text of ClickUp's `description`: the Markdown without its code delimiters, as ClickUp flattens it. */
+const clickUpPlainText = (markdown: string) => markdown.replace(/`+/g, "");
+
+export function createFakeClickUp(listId = "list-1", workspaceId = "ws-1"): SaasFake {
+  const issues: SaasIssue[] = [];
+  const find = (id: string) => issues.find((issue) => issue.key === id);
+  const typeOf = (issue: SaasIssue) => CLICKUP_STATUSES.find((status) => status.status === issue.stateKind)?.type;
+  const task = (issue: SaasIssue, markdown: boolean) => ({
+    id: issue.key,
+    name: issue.title,
+    url: `https://app.clickup.com/t/${issue.key}`,
+    description: clickUpPlainText(String(issue.description)),
+    text_content: clickUpPlainText(String(issue.description)),
+    ...(markdown ? { markdown_description: issue.description } : {}),
+    status: { status: issue.stateKind, type: typeOf(issue), color: "#000", orderindex: 0 },
+    tags: issue.labels.map((name) => ({ name, tag_fg: "#fff", tag_bg: "#000" })),
+    list: { id: issue.scope ?? listId, name: "Feedback", access: true },
+    folder: { id: "f-1", name: "hidden", hidden: true, access: true },
+    space: { id: "sp-1" },
+    team_id: issue.workspace ?? workspaceId,
+  });
+
+  const server = base((request, body: any, route) => {
+    if (!request.headers.get("authorization")) {
+      return Response.json({ err: "Token invalid", ECODE: "OAUTH_025" }, { status: 401 });
+    }
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith("/api/v2/")) return new Response("not found", { status: 404 });
+    const path = url.pathname.slice("/api/v2".length);
+    const markdown = url.searchParams.get("include_markdown_description") === "true";
+    let match: RegExpMatchArray | null;
+    if (route === `GET /api/v2/list/${listId}`) return Response.json({ id: listId, statuses: CLICKUP_STATUSES });
+    if (path === `/list/${listId}/task`) {
+      if (route.startsWith("POST")) {
+        if (typeof body.name !== "string" || body.name === "") return Response.json({ err: "name" }, { status: 400 });
+        const issue: SaasIssue = {
+          key: `cu${issues.length + 1}`,
+          title: body.name,
+          // `markdown_content` wins over `description`.
+          description: body.markdown_content ?? body.description ?? "",
+          // ClickUp stores tag names lowercase.
+          labels: (body.tags ?? []).map((tag: string) => tag.toLowerCase()),
+          stateKind: "to do",
+          comments: [],
+        };
+        issues.push(issue);
+        return Response.json(task(issue, false));
+      }
+      const page = Number(url.searchParams.get("page") ?? 0);
+      const tags = url.searchParams.getAll("tags[]");
+      const closed = url.searchParams.get("include_closed") === "true";
+      const ordered = url.searchParams.get("order_by") === "created" ? [...issues].reverse() : issues;
+      const matching = ordered
+        .filter((issue) => (issue.scope ?? listId) === listId)
+        .filter((issue) => tags.every((tag) => issue.labels.includes(tag)))
+        .filter((issue) => closed || typeOf(issue) !== "closed");
+      const tasks = matching.slice(page * 100, (page + 1) * 100);
+      return Response.json({
+        tasks: tasks.map((issue) => task(issue, markdown)),
+        last_page: (page + 1) * 100 >= matching.length,
+      });
+    }
+    match = path.match(/^\/task\/([\w-]+)\/comment$/);
+    if (match) {
+      const issue = find(match[1] as string);
+      if (!issue) return Response.json({ err: "Task not found, deleted", ECODE: "ITEM_013" }, { status: 404 });
+      if (route.startsWith("POST")) {
+        if (typeof body.comment_text !== "string") return Response.json({ err: "comment_text" }, { status: 400 });
+        issue.comments.push(body.comment_text);
+        return Response.json({ id: String(issue.comments.length), hist_id: "h", date: issue.comments.length });
+      }
+      // Newest first, 25 per page, older ones after the comment named by `start` and `start_id`.
+      const newest = issue.comments.map((text, index) => ({ id: String(index + 1), date: index + 1, text })).reverse();
+      const startId = url.searchParams.get("start_id");
+      const from = startId ? newest.findIndex((comment) => comment.id === startId) + 1 : 0;
+      return Response.json({
+        comments: newest.slice(from, from + 25).map((comment) => ({
+          id: comment.id,
+          date: String(comment.date),
+          comment_text: comment.text,
+          comment: [{ text: comment.text }],
+        })),
+      });
+    }
+    match = path.match(/^\/task\/([\w-]+)$/);
+    if (match) {
+      const issue = find(match[1] as string);
+      if (!issue) return Response.json({ err: "Task not found, deleted", ECODE: "ITEM_013" }, { status: 404 });
+      if (route.startsWith("PUT")) {
+        const status = CLICKUP_STATUSES.find((candidate) => candidate.status === String(body.status).toLowerCase());
+        if (!status) return Response.json({ err: "Status not found", ECODE: "CRTSK_001" }, { status: 400 });
+        issue.stateKind = status.status;
+      }
+      return Response.json(task(issue, markdown));
+    }
+    return new Response(`no route ${route}`, { status: 404 });
+  });
+  return {
+    ...server,
+    issues,
+    descriptionText: (issue) => String(issue.description),
+    commentText: (comment) => String(comment),
   };
 }

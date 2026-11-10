@@ -1,6 +1,6 @@
 import type { AnnotationRecord, FeedbackRecord } from "@siteping/core";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ISSUE_BODY_MAX_LENGTH, OVERSIZED_BODY_NOTE } from "../src/constants/issue-format.js";
 import {
   buildDeletionComment,
@@ -285,7 +285,12 @@ describe("formatIssue", () => {
       annotations: Array.from({ length: 50 }, () =>
         annotation({ elementTag: backticks(191), cssSelector: backticks(2000), textSnippet: backticks(500) }),
       ),
+      flowId: backticks(128),
+      flowStep: 100,
+      flowTitle: backticks(200),
       diagnostics: {
+        components: Array.from({ length: 30 }, () => backticks(200)),
+        recording: { url: `https://media.test/${backticks(2000)}`, mimeType: "video/webm", durationMs: 1, bytes: 1 },
         console: Array.from({ length: 50 }, () => ({
           level: "error" as const,
           timestamp: "t",
@@ -309,6 +314,9 @@ describe("formatIssue", () => {
     expect(body).toContain(codeBlock(feedback.message));
     expect(body).not.toContain("## Annotations");
     expect(body).not.toContain("## Console diagnostics");
+    expect(body).toContain("## Flow");
+    expect(body).toContain("## Component path");
+    expect(body).toContain("## Screen recording");
     expect(body.endsWith(`\n\n${OVERSIZED_BODY_NOTE}`)).toBe(true);
   });
 
@@ -387,6 +395,132 @@ describe("formatIssue", () => {
     expect(embedded("https://cdn.test/shots/a (1).png")).toEqual(["https://cdn.test/shots/a%20(1).png"]);
     expect(embedded("data:image/jpeg;base64,AAAA")).toEqual([]);
     expect(embedded("http://cdn.test/shots/a.png")).toEqual([]);
+  });
+
+  describe("flow, component path and screen recording", () => {
+    const recording = (url: string, mimeType = "video/webm") => ({
+      url,
+      mimeType: mimeType as "video/webm",
+      durationMs: 12_345,
+      bytes: 1000,
+    });
+    const captured = (overrides: Partial<NonNullable<FeedbackRecord["diagnostics"]>> = {}) => ({
+      console: [],
+      network: [],
+      ...overrides,
+    });
+
+    it("shows the flow step and title, the component path and the recording link", () => {
+      const { body } = formatIssue(
+        record({
+          flowId: "flow_1",
+          flowStep: 2,
+          flowTitle: "Checkout",
+          diagnostics: captured({
+            components: ["App", "Layout", "PricingCard"],
+            recording: recording("https://media.test/rec/a b.webm"),
+          }),
+        }),
+        options,
+      );
+
+      expect(body).toContain("## Flow\n\nStep 2 of `Checkout`, flow `flow_1`");
+      expect(body).toContain("## Component path\n\n`App` › `Layout` › `PricingCard`");
+      expect(body).toContain("## Screen recording\n\n<https://media.test/rec/a%20b.webm> (video/webm, 12.3 s)");
+      expect(liveMarkdown(body).links).toEqual(["https://media.test/rec/a%20b.webm"]);
+    });
+
+    it("leaves the sections out when the feedback has none of them", () => {
+      const { body } = formatIssue(record({ diagnostics: captured() }), options);
+
+      expect(body).not.toContain("## Flow");
+      expect(body).not.toContain("## Component path");
+      expect(body).not.toContain("## Screen recording");
+    });
+
+    it("names an untitled flow, and an impossible step as unknown", () => {
+      const { body } = formatIssue(record({ flowId: "f", flowStep: -1, flowTitle: " " }), options);
+
+      expect(body).toContain("## Flow\n\nStep ? of an untitled flow, flow `f`");
+    });
+
+    it("quotes hostile flow titles, flow ids and component names so nothing in them renders", () => {
+      const hostile = `${payloads.join("\n")} \`\` \``;
+      const { body } = formatIssue(
+        record({
+          flowId: hostile,
+          flowStep: 1,
+          flowTitle: hostile,
+          diagnostics: captured({ components: [hostile, "Card", hostile] }),
+        }),
+        options,
+      );
+      const live = liveMarkdown(body);
+
+      for (const leak of leaks) expect(live.text).not.toContain(leak);
+      expect(live.links).toEqual([]);
+      expect(live.images).toEqual([]);
+    });
+
+    it("never links a recording that is not https, carries credentials, or that the redaction changed", () => {
+      const links = (url: string, redact = (text: string) => text) =>
+        liveMarkdown(
+          formatIssue(record({ diagnostics: captured({ recording: recording(url) }) }), { ...options, redact }).body,
+        ).links;
+
+      for (const url of [
+        "http://media.test/a.webm",
+        "javascript:alert(1)",
+        "https://user:pass@media.test/a.webm",
+        "/api/siteping/recordings/a.webm",
+        // The report redactor takes the signature out: a cut link would lead nowhere.
+        "https://media.test/a.webm?X-Amz-Signature=abcdef0123456789",
+      ]) {
+        expect(links(url)).toEqual([]);
+      }
+      expect(links("https://media.test/a.webm", (text) => text.replace("media", "[host]"))).toEqual([]);
+      const { body } = formatIssue(
+        record({ diagnostics: captured({ recording: recording("https://media.test/a.webm?token=s3cret") }) }),
+        options,
+      );
+      expect(body).not.toContain("s3cret");
+    });
+
+    it("prints only the media types a recording may have", () => {
+      const { body } = formatIssue(
+        record({ diagnostics: captured({ recording: recording("https://media.test/a", "text/html <b>") }) }),
+        options,
+      );
+
+      expect(body).toContain("## Screen recording\n\n<https://media.test/a> (12.3 s)");
+    });
+
+    it("runs the new values through the report redactor, then redact", () => {
+      const redact = vi.fn((text: string) => text.replace(/Secret/g, "[mine]"));
+      const { body } = formatIssue(
+        record({
+          flowId: "f",
+          flowStep: 1,
+          flowTitle: "Secret flow token=abc \u202Eevil",
+          diagnostics: captured({ components: ["SecretPanel", "sk-ant-0123456789abcdefghij"] }),
+        }),
+        { ...options, redact },
+      );
+
+      expect(body).toContain("Step 1 of `[mine] flow token=[secret] evil`");
+      expect(body).toContain("`[mine]Panel` › `[secret]`");
+      expect(body).not.toContain("\u202E");
+    });
+
+    it("keeps the 30 nearest components, each name cut to 100 characters", () => {
+      const components = [...Array.from({ length: 40 }, (_, index) => `C${index}`), "x".repeat(500)];
+
+      const { body } = formatIssue(record({ diagnostics: captured({ components }) }), options);
+
+      expect(body).not.toContain("`C10`");
+      expect(body).toContain("`C11` › ");
+      expect(body).toContain(`\`${"x".repeat(97)}...\``);
+    });
   });
 
   it("redacts every free-text field, annotations and diagnostics included", () => {

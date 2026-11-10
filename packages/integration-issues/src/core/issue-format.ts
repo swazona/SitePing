@@ -1,11 +1,15 @@
 import { type FeedbackRecord, parseHttpUrl } from "@siteping/core";
+import { createReportRedactor } from "@siteping/core/report";
 import {
   ANNOTATION_FIELD_MAX_LENGTH,
   ANNOTATIONS_LISTED,
+  COMPONENT_NAME_MAX_LENGTH,
+  COMPONENTS_LISTED,
   DELETED_FEEDBACK_COMMENT_MARKER,
   DIAGNOSTIC_ENTRIES_PER_KIND,
   DIAGNOSTIC_ENTRY_MAX_LENGTH,
   EMPTY_DIAGNOSTICS_PLACEHOLDER,
+  FLOW_TITLE_MAX_LENGTH,
   ISSUE_BODY_MAX_LENGTH,
   ISSUE_REFERENCE_MARKER,
   ISSUE_SECTION_HEADINGS,
@@ -14,6 +18,8 @@ import {
   ISSUE_TITLE_PREFIX,
   MORE_ANNOTATIONS_TEMPLATE,
   OVERSIZED_BODY_NOTE,
+  RECORDING_MIME_TYPES,
+  RECORDING_URL_MAX_LENGTH,
   TRUNCATION_SUFFIX,
 } from "../constants/issue-format.js";
 import { codeBlock, codeSpan, defuseReferences } from "./markdown.js";
@@ -25,7 +31,10 @@ export interface IssueContent {
 }
 
 export interface IssueFormatOptions {
-  /** Applied to every free-text value copied from the feedback (message, author, URLs, user agent, diagnostics). */
+  /**
+   * Applied to every free-text value copied from the feedback (message, author, URLs, user agent, diagnostics,
+   * flow title, component names, recording URL).
+   */
   redact: (text: string) => string;
   /** Query parameter of the widget's deep link, or `false` to omit the link. */
   deepLinkParam: string | false;
@@ -92,6 +101,63 @@ function buildAnnotations(feedback: FeedbackRecord, redact: (text: string) => st
   return section(ISSUE_SECTION_HEADINGS.annotations, lines.join("\n"));
 }
 
+/**
+ * The report formatter's redaction (`@siteping/core/report`, its defaults:
+ * secrets out, invisible and bidi characters out, line breaks normalized),
+ * which the values the capture and flow features added go through before
+ * the caller's `redact`.
+ */
+const reportRedactor = createReportRedactor();
+
+type Clean = (text: string) => string;
+
+/** Where in a multi-page flow the feedback sits: its step, the flow's title and id, quoted. */
+function buildFlow(feedback: FeedbackRecord, clean: Clean): string | null {
+  if (!feedback.flowId) return null;
+  const { flowStep } = feedback;
+  const step = typeof flowStep === "number" && Number.isSafeInteger(flowStep) && flowStep > 0 ? String(flowStep) : "?";
+  const title = feedback.flowTitle ? truncate(clean(feedback.flowTitle), FLOW_TITLE_MAX_LENGTH) : "";
+  const named = title.trim() === "" ? "an untitled flow" : codeSpan(title);
+  const id = truncate(clean(feedback.flowId), COMPONENT_NAME_MAX_LENGTH);
+  return section(ISSUE_SECTION_HEADINGS.flow, `Step ${step} of ${named}, flow ${codeSpan(id)}`);
+}
+
+/** The React components from the root down to the annotated element, each name quoted. */
+function buildComponents(feedback: FeedbackRecord, clean: Clean): string | null {
+  const names = (feedback.diagnostics?.components ?? [])
+    .filter((name): name is string => typeof name === "string")
+    .map((name) => truncate(clean(name), COMPONENT_NAME_MAX_LENGTH))
+    .filter((name) => name.trim() !== "")
+    .slice(-COMPONENTS_LISTED);
+  return names.length > 0 ? section(ISSUE_SECTION_HEADINGS.components, names.map(codeSpan).join(" › ")) : null;
+}
+
+/** A duration in milliseconds, as seconds. */
+const seconds = (ms: number): string => (Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms / 100) / 10} s` : "? s");
+
+/**
+ * The screen recording: linked when it is an https URL the redaction left
+ * whole (a link cut by a redaction would lead nowhere), quoted otherwise.
+ */
+function buildRecording(feedback: FeedbackRecord, clean: Clean): string | null {
+  const recording = feedback.diagnostics?.recording;
+  if (!recording || typeof recording.url !== "string" || recording.url === "") return null;
+  const redacted = clean(recording.url);
+  const parsed = redacted === recording.url ? parseHttpUrl(recording.url) : null;
+  const link =
+    parsed?.protocol === "https:" &&
+    !parsed.username &&
+    !parsed.password &&
+    parsed.href.length <= RECORDING_URL_MAX_LENGTH
+      ? `<${parsed.href}>`
+      : codeSpan(truncate(redacted, RECORDING_URL_MAX_LENGTH));
+  const details = [
+    ...(RECORDING_MIME_TYPES.has(recording.mimeType) ? [recording.mimeType] : []),
+    seconds(recording.durationMs),
+  ];
+  return section(ISSUE_SECTION_HEADINGS.recording, `${link} (${details.join(", ")})`);
+}
+
 /** One block per kind: console messages and network URLs are visitor-controlled, and may span lines. */
 function buildDiagnostics(feedback: FeedbackRecord, redact: (text: string) => string): string[] {
   if (!feedback.diagnostics) return [];
@@ -110,12 +176,17 @@ function buildDiagnostics(feedback: FeedbackRecord, redact: (text: string) => st
 }
 
 /**
- * Default Markdown rendering — GitHub and GitLab render it. Every value
- * copied from the feedback is quoted as code (see `markdown.ts`); the deep
- * link is an autolink, which the URL parser has already percent-encoded.
+ * Default Markdown rendering — GitHub, GitLab, Linear and ClickUp render it,
+ * Jira and Plane get it converted (`rich-text.ts`). Every value copied from
+ * the feedback is quoted as code (see `markdown.ts`); the deep link and the
+ * recording are autolinks, which the URL parser has already percent-encoded.
+ * The flow, the React component path and the screen recording, when the
+ * feedback has them, go through the redactor SitePing reports use (secrets and
+ * invisible characters out) before `redact`.
  */
 export function formatIssue(feedback: FeedbackRecord, options: IssueFormatOptions): IssueContent {
   const { redact } = options;
+  const clean: Clean = (text) => redact(reportRedactor.text(text));
   const message = redact(feedback.message);
   const titleBudget = ISSUE_TITLE_MAX_LENGTH - ISSUE_TITLE_PREFIX.length - 1;
   const title = `${ISSUE_TITLE_PREFIX} ${truncate(defuseReferences(message.replace(/\s+/g, " ").trim()), titleBudget)}`;
@@ -135,8 +206,10 @@ export function formatIssue(feedback: FeedbackRecord, options: IssueFormatOption
   const summary = [
     section(ISSUE_SECTION_HEADINGS.message, codeBlock(message)),
     section(ISSUE_SECTION_HEADINGS.type, feedback.type),
+    buildFlow(feedback, clean),
     section(ISSUE_SECTION_HEADINGS.pageUrl, codeSpan(page?.href ?? pageUrl)),
     deepLink ? section(ISSUE_SECTION_HEADINGS.deepLink, `<${deepLink}>`) : null,
+    buildComponents(feedback, clean),
   ];
   const context = [
     section(ISSUE_SECTION_HEADINGS.author, codeSpan(redact(author))),
@@ -145,6 +218,7 @@ export function formatIssue(feedback: FeedbackRecord, options: IssueFormatOption
     screenshot?.protocol === "https:"
       ? section(ISSUE_SECTION_HEADINGS.screenshot, `![${ISSUE_SECTION_HEADINGS.screenshot}](<${screenshot.href}>)`)
       : null,
+    buildRecording(feedback, clean),
   ];
   const body = joinSections([
     ...summary,

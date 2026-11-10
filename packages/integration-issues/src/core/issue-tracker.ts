@@ -44,7 +44,7 @@ export interface IssueListing {
  * hooks own everything provider-agnostic (format, linking, idempotency).
  *
  * Implement it to plug trackers beyond the built-in GitHub, GitLab, Linear,
- * Jira and Plane entries (an internal tool, another SaaS…).
+ * Jira, Plane and ClickUp entries (an internal tool, another SaaS…).
  */
 export interface IssueTracker {
   /** Human-readable provider name, used in error messages. */
@@ -87,5 +87,5 @@ export interface IssueTracker {
   getIssue?(key: string): Promise<TrackedIssue | null>;
 }
 
-/** An `IssueTracker` that can read one issue — what the Linear, Jira and Plane webhooks need. */
+/** An `IssueTracker` that can read one issue — what the Linear, Jira, Plane and ClickUp webhooks need. */
 export type ReadableIssueTracker = IssueTracker & Required<Pick<IssueTracker, "getIssue">>;

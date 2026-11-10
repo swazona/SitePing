@@ -53,7 +53,7 @@ What sets SitePing apart is how annotations are kept: each one is anchored to th
 - **Instant right-click comments**: opt-in, and it never hijacks keyboard or modifier-key context menus
 - **Screenshots + diagnostics**: opt-in JPEG of the annotated area (with privacy masking) and console/network capture
 - **Discussion threads**: reviewers reply in the widget, your team answers from the inbox, on the endpoint you already mounted
-- **Issue trackers**: [`@siteping/integration-issues`](https://siteping.dev/docs/issue-trackers) opens one GitHub, GitLab, Linear, Jira or Plane issue per feedback and keeps the two in sync both ways
+- **Issue trackers**: [`@siteping/integration-issues`](https://siteping.dev/docs/issue-trackers) opens one GitHub, GitLab, Linear, Jira, Plane or ClickUp issue per feedback and keeps the two in sync both ways
 - **Phones & tablets**: clients tap an element to comment; on a phone, the form and the panel become bottom sheets
 - **Reviewer mode**: `readOnly`, and the server's permissions, hide what a visitor may not do
 - **Webhooks**: Slack, Discord or generic JSON when feedback lands, and opt-in when it changes status, is deleted or gets a reply
@@ -104,7 +104,7 @@ The full documentation lives at **[siteping.dev/docs](https://siteping.dev/docs)
 | [`@siteping/server`](./packages/server) | HTTP endpoint over any store, any framework (auth, CORS, hooks, webhooks) | [Server](https://siteping.dev/docs/server) |
 | [`@siteping/adapter-prisma`](./packages/adapter-prisma) | Production server adapter: the endpoint with a Prisma store built in | [Prisma adapter](https://siteping.dev/docs/adapters/prisma) |
 | [`@siteping/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle ORM store (PostgreSQL, Turso/libSQL) | [Drizzle adapter](https://siteping.dev/docs/adapters/drizzle) |
-| [`@siteping/integration-issues`](./packages/integration-issues) | One GitHub, GitLab, Linear, Jira or Plane issue per feedback, kept in sync through the server's hooks and the trackers' webhooks | [Issue trackers](https://siteping.dev/docs/issue-trackers) |
+| [`@siteping/integration-issues`](./packages/integration-issues) | One GitHub, GitLab, Linear, Jira, Plane or ClickUp issue per feedback, kept in sync through the server's hooks and the trackers' webhooks | [Issue trackers](https://siteping.dev/docs/issue-trackers) |
 | [`@siteping/mcp`](./packages/mcp) | MCP server: AI coding agents (Claude Code, Cursor, Codex) list, read, answer and resolve feedback | [MCP server](https://siteping.dev/docs/mcp) |
 | [`@siteping/screenshot-storage`](./packages/screenshot-storage) | Screenshot storage for the stores (S3-compatible, Cloudflare Images, database, filesystem, custom) | [Screenshot storage](https://siteping.dev/docs/adapters/screenshot-storage) |
 | [`@siteping/adapter-memory`](./packages/adapter-memory) | In-memory store (tests, demos) | [Memory adapter](https://siteping.dev/docs/adapters/memory) |

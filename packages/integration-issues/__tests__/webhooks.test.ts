@@ -4,11 +4,18 @@ import { createSitepingHandler } from "@siteping/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hmacSha256Hex } from "../src/core/webhook.js";
 import { createIssueTrackerHooks, type IssueWebhookOptions } from "../src/index.js";
+import { createClickUpTracker, createClickUpWebhookHandler } from "../src/providers/clickup.js";
 import { createGitHubWebhookHandler } from "../src/providers/github.js";
 import { createJiraTracker, createJiraWebhookHandler } from "../src/providers/jira.js";
 import { createLinearTracker, createLinearWebhookHandler } from "../src/providers/linear.js";
 import { createPlaneTracker, createPlaneWebhookHandler } from "../src/providers/plane.js";
-import { createFakeJira, createFakeLinear, createFakePlane, type SaasFake } from "./fake-saas-trackers.js";
+import {
+  createFakeClickUp,
+  createFakeJira,
+  createFakeLinear,
+  createFakePlane,
+  type SaasFake,
+} from "./fake-saas-trackers.js";
 
 const SECRET = "webhook-signing-secret";
 const TOKEN = "tracker-secret-token";
@@ -169,7 +176,54 @@ const cases: SaasWebhookCase[] = [
         signWith("X-Plane-Signature"),
       ),
   },
+  {
+    name: "ClickUp",
+    createFake: () => createFakeClickUp(),
+    createTracker: (fake) =>
+      createClickUpTracker({
+        listId: "list-1",
+        workspaceId: "ws-1",
+        token: TOKEN,
+        statuses: { wont_fix: "won't fix" },
+        fetch: fake.fetch,
+      }),
+    createHandler: (tracker, options) => createClickUpWebhookHandler({ tracker, ...options }),
+    kinds: { open: "to do", resolved: "complete", wontFix: "won't fix" },
+    stateChange: (key, sign) => clickUpStatusDelivery(key, sign ? signWith("X-Signature") : unsigned),
+    otherChange: (key) =>
+      delivery(
+        {
+          event: "taskTagUpdated",
+          task_id: key,
+          webhook_id: "wh-1",
+          history_items: [{ id: "h-2", field: "tag", after: [{ name: "x" }] }],
+        },
+        signWith("X-Signature"),
+      ),
+  },
 ];
+
+/** A ClickUp `taskStatusUpdated` delivery, its payload claiming the task is complete whatever it is. */
+function clickUpStatusDelivery(key: string, headers: (raw: string) => Promise<Record<string, string>>) {
+  return delivery(
+    {
+      event: "taskStatusUpdated",
+      task_id: key,
+      webhook_id: "wh-1",
+      history_items: [
+        {
+          id: "h-1",
+          type: 1,
+          date: "1642740510345",
+          field: "status",
+          before: { status: "to do", color: "#f9d900", orderindex: 0, type: "open" },
+          after: { status: "complete", color: "#6bc950", orderindex: 3, type: "closed" },
+        },
+      ],
+    },
+    headers,
+  );
+}
 
 for (const testCase of cases) {
   describe(`${testCase.name} webhook`, () => {
@@ -373,6 +427,95 @@ describe("Jira webhook", () => {
     expect((await withHeader.handle(await delivery(update(withHeader.issue.key), headers("wrong")))).status).toBe(401);
     expect((await withHeader.handle(await delivery(update(withHeader.issue.key), headers(SECRET)))).status).toBe(200);
     expect(await statusOf(withHeader.store, withHeader.feedback.id)).toBe("resolved");
+  });
+});
+
+describe("ClickUp webhook", () => {
+  async function setup() {
+    const fake = createFakeClickUp();
+    const tracker = createClickUpTracker({ listId: "list-1", workspaceId: "ws-1", token: TOKEN, fetch: fake.fetch });
+    const store = new MemoryStore();
+    const feedback = await serverWith(store, createIssueTrackerHooks({ tracker }))();
+    const handle = createClickUpWebhookHandler({ tracker, secret: SECRET, store, logger: { error: vi.fn() } });
+    return { fake, store, feedback, handle, issue: fake.issues[0] as SaasFake["issues"][number] };
+  }
+
+  it("verifies the X-Signature HMAC of the raw body, any case, against the documented Node example", async () => {
+    const { createHmac } = await import("node:crypto");
+    const { store, feedback, handle, issue } = await setup();
+    issue.stateKind = "complete";
+
+    const response = await handle(
+      await clickUpStatusDelivery(issue.key, async (raw) => ({
+        "Content-Type": "application/json",
+        "X-Signature": createHmac("sha256", SECRET).update(raw).digest("hex").toUpperCase(),
+      })),
+    );
+
+    expect(await response.json()).toEqual({ result: "updated", status: "resolved" });
+    expect(await statusOf(store, feedback.id)).toBe("resolved");
+  });
+
+  it("refuses a signature made with another secret, over other bytes, or cut short", async () => {
+    const { store, feedback, handle, issue, fake } = await setup();
+    issue.stateKind = "complete";
+    const before = fake.requests.length;
+    const update = vi.spyOn(store, "updateFeedback");
+    const signed = (signature: (raw: string) => Promise<string>) =>
+      clickUpStatusDelivery(issue.key, async (raw) => ({
+        "Content-Type": "application/json",
+        "X-Signature": await signature(raw),
+      }));
+
+    for (const request of [
+      await signed((raw) => hmacSha256Hex("another-secret", encoder.encode(raw))),
+      await signed((raw) => hmacSha256Hex(SECRET, encoder.encode(`${raw} `))),
+      await signed(async (raw) => (await hmacSha256Hex(SECRET, encoder.encode(raw))).slice(0, 63)),
+      await signed(async (raw) => `sha256=${await hmacSha256Hex(SECRET, encoder.encode(raw))}`),
+    ]) {
+      expect((await handle(request)).status).toBe(401);
+    }
+    expect(update).not.toHaveBeenCalled();
+    expect(fake.requests).toHaveLength(before);
+    expect(await statusOf(store, feedback.id)).toBe("open");
+  });
+
+  it("reads the task's status through the tracker, not the delivery's", async () => {
+    const { store, feedback, handle, issue } = await setup();
+    // The delivery says "complete"; the task is still to do.
+    const response = await handle(await clickUpStatusDelivery(issue.key, signWith("X-Signature")));
+
+    expect(await response.json()).toEqual({ result: "ignored", reason: "feedback status already matches" });
+    expect(issue.stateKind).toBe("to do");
+    expect(await statusOf(store, feedback.id)).toBe("open");
+  });
+
+  it("never lets a task of another workspace change a feedback, and never writes the store", async () => {
+    const { store, feedback, handle, issue } = await setup();
+    const update = vi.spyOn(store, "updateFeedback");
+    issue.workspace = "ws-2";
+    issue.stateKind = "complete";
+
+    const response = await handle(await clickUpStatusDelivery(issue.key, signWith("X-Signature")));
+
+    expect(await response.json()).toEqual({ result: "ignored", reason: "not an issue state change" });
+    expect(update).not.toHaveBeenCalled();
+    expect(await statusOf(store, feedback.id)).toBe("open");
+  });
+
+  it("ignores a delivery naming no task id, or one that is no id, without asking ClickUp", async () => {
+    const { handle, fake, store } = await setup();
+    const update = vi.spyOn(store, "updateFeedback");
+    const before = fake.requests.length;
+
+    for (const taskId of [undefined, 12, "../list/list-1", { id: "cu1" }]) {
+      const response = await handle(
+        await delivery({ event: "taskStatusUpdated", task_id: taskId }, signWith("X-Signature")),
+      );
+      expect(await response.json()).toEqual({ result: "ignored", reason: "not an issue state change" });
+    }
+    expect(fake.requests).toHaveLength(before);
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

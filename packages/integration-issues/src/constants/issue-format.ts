@@ -34,6 +34,21 @@ export const ANNOTATION_FIELD_MAX_LENGTH = 300;
  */
 export const ISSUE_BODY_MAX_LENGTH = 60_000;
 
+/** React component names listed in the component path, the nearest to the annotated element kept (the widget records up to 30). */
+export const COMPONENTS_LISTED = 30;
+
+/** Longest component name or flow id copied into the issue body, in characters. */
+export const COMPONENT_NAME_MAX_LENGTH = 100;
+
+/** Longest flow title copied into the issue body, in characters. */
+export const FLOW_TITLE_MAX_LENGTH = 300;
+
+/** Longest recording URL linked from the issue body; a longer one is left out. */
+export const RECORDING_URL_MAX_LENGTH = 2048;
+
+/** Recording media types printed as is; any other is left out. */
+export const RECORDING_MIME_TYPES: ReadonlySet<string> = new Set(["video/webm", "video/mp4"]);
+
 /** Query parameter the widget reads to focus a feedback (`SitepingConfig.deepLink`). */
 export const DEFAULT_DEEP_LINK_PARAM = "siteping";
 
@@ -60,6 +75,9 @@ export const ISSUE_SECTION_HEADINGS = {
   viewport: "Viewport",
   userAgent: "User agent",
   screenshot: "Screenshot",
+  flow: "Flow",
+  components: "Component path",
+  recording: "Screen recording",
   consoleDiagnostics: "Console diagnostics",
   networkDiagnostics: "Network diagnostics",
 } as const satisfies Record<string, string>;

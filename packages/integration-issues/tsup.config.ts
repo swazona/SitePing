@@ -15,6 +15,7 @@ export default defineConfig(
       linear: "src/providers/linear.ts",
       jira: "src/providers/jira.ts",
       plane: "src/providers/plane.ts",
+      clickup: "src/providers/clickup.ts",
     },
   }),
 );

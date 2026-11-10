@@ -1,7 +1,7 @@
 {
   "name": "@siteping/integration-issues",
   "version": "0.2.0",
-  "description": "Issue tracker integration for Siteping \u2014 one issue per feedback on GitHub, GitLab, Linear, Jira, Plane or your own tracker, kept in sync both ways through @siteping/server lifecycle hooks and tracker webhooks",
+  "description": "Issue tracker integration for Siteping \u2014 one issue per feedback on GitHub, GitLab, Linear, Jira, Plane, ClickUp or your own tracker, kept in sync both ways through @siteping/server lifecycle hooks and tracker webhooks",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -64,6 +64,16 @@
         "types": "./dist/plane.d.cts",
         "default": "./dist/plane.cjs"
       }
+    },
+    "./clickup": {
+      "import": {
+        "types": "./dist/clickup.d.ts",
+        "default": "./dist/clickup.js"
+      },
+      "require": {
+        "types": "./dist/clickup.d.cts",
+        "default": "./dist/clickup.cjs"
+      }
     }
   },
   "main": "./dist/index.cjs",
@@ -85,6 +95,7 @@
     "linear",
     "jira",
     "plane",
+    "clickup",
     "integration",
     "feedback",
     "typescript"

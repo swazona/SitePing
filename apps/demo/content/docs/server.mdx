@@ -632,7 +632,7 @@ createSitepingHandler({
 
 These callbacks get `{ request, principal }` as their context; `principal` is `null` under the `apiKey` policy. Hooks written as class methods keep their `this`.
 
-To keep one GitHub, GitLab, Linear, Jira or Plane issue per feedback, closed and reopened along with it, [`@siteping/integration-issues`](/docs/issue-trackers) builds these hooks for you.
+To keep one GitHub, GitLab, Linear, Jira, Plane or ClickUp issue per feedback, closed and reopened along with it, [`@siteping/integration-issues`](/docs/issue-trackers) builds these hooks for you.
 
 ### Notifying the reporter
 
@@ -671,7 +671,7 @@ createSitepingHandler({
 - **When it fires.** A PATCH first reads the feedback with the store's `getFeedback`, when it has one ([memory](/docs/adapters/memory) does), and only a change that crosses between open and closed, or changes the close reason, notifies: `open` → `in_progress` does not. A store without `getFeedback` keeps no previous status to compare with, so every PATCH to `resolved` or `wont_fix` notifies `resolved`, every PATCH to `open` notifies `reopened`, and one to `in_progress` nothing. A reply's feedback is read with `getFeedback` too, else found among its project's 1,000 newest feedbacks; one older than that is logged and not notified.
 - **Latency and failures.** It is awaited before the response, after the hooks, like them: a slow SMTP server holds the dashboard's request. A throw is logged as `[siteping] Hook notifyReporter failed` and never fails the request. To answer at once, hand the delivery to `waitUntil` (or a queue) yourself and return.
 - **Replies need `addCommentIfAbsent`.** A store with threads that cannot tell a new reply from a retried one would email on every retry, so the handler refuses to start (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Every bundled store implements it.
-- **Tracker syncs.** A status changed from GitHub, Linear, Jira or Plane through the [issue tracker webhooks](/docs/issue-trackers#two-way-sync) does not go through the handler: pass the same function to their `onStatusSynced`.
+- **Tracker syncs.** A status changed from GitHub, Linear, Jira, Plane or ClickUp through the [issue tracker webhooks](/docs/issue-trackers#two-way-sync) does not go through the handler: pass the same function to their `onStatusSynced`.
 - **Spoofed addresses.** `authorEmail` is what the widget sent, which anonymous visitors type. Whatever you email to it, the visitor chose the recipient: keep the content to their own feedback, never anything another reviewer wrote that they could not already see.
 
 ## HTTP reference
