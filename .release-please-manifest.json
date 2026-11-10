@@ -10,5 +10,6 @@
   "packages/server": "0.2.3",
   "packages/screenshot-storage": "0.2.2",
   "packages/integration-issues": "0.2.0",
-  "packages/mcp": "0.0.0"
+  "packages/mcp": "0.0.0",
+  "packages/integration-notify": "0.0.0"
 }

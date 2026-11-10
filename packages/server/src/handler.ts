@@ -2,7 +2,7 @@ import { hasOwn, SitepingConfigError, type SitepingLogger } from "@siteping/core
 import { type AccessGate, createAccessGate, createApiKeyGate } from "./access.js";
 import { DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_RECORDING_BYTES } from "./constants.js";
 import { preflightResponse } from "./cors.js";
-import { createNotifier } from "./notify.js";
+import { createNotifier, createTeamNotifier } from "./notify.js";
 import { createCommentOperation } from "./operations/create-comment.js";
 import { createFeedbackOperation } from "./operations/create-feedback.js";
 import { deleteCommentOperation } from "./operations/delete-comment.js";
@@ -124,6 +124,7 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     presentFeedback,
     hooks = {},
     notifyReporter,
+    notifyTeam,
     rateLimit,
     logger: customLogger,
     describeError,
@@ -202,7 +203,15 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
         "which tells a new reply from a retried one.",
     );
   }
+  if (notifyTeam && store.addComment && !store.addCommentIfAbsent) {
+    throw new SitepingConfigError(
+      "CONFIG_NOTIFY_TEAM_UNSUPPORTED",
+      "[siteping] createSitepingHandler: `notifyTeam` needs a store with threads to implement `addCommentIfAbsent`, " +
+        "which tells a new reply from a retried one.",
+    );
+  }
   const notify = createNotifier(webhookList, waitUntil, pipeline);
+  const team = createTeamNotifier(notifyTeam, waitUntil, pipeline);
   const limit = createRateLimiter(rateLimit, allowedOrigins, logger);
   const uploadRecording = uploadRecordingOperation({
     pipeline,
@@ -221,6 +230,7 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
       beforeComment,
       onCommentCreated: hooks.onCommentCreated?.bind(hooks),
       notifyReporter,
+      team,
     }),
     createFeedbackOperation({
       store,
@@ -229,6 +239,7 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
       beforeCreate,
       // Bound so hooks written as class methods keep their `this`.
       onCreated: hooks.onCreated?.bind(hooks),
+      team,
       recordingStorage,
     }),
   );
@@ -243,7 +254,14 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     GET: limit("GET", listFeedbacksOperation({ store, pipeline, recordings: recordingStorage !== undefined })),
     PATCH: limit(
       "PATCH",
-      updateFeedbackOperation({ store, pipeline, notify, onUpdated: hooks.onUpdated?.bind(hooks), notifyReporter }),
+      updateFeedbackOperation({
+        store,
+        pipeline,
+        notify,
+        onUpdated: hooks.onUpdated?.bind(hooks),
+        notifyReporter,
+        team,
+      }),
     ),
     DELETE: limit(
       "DELETE",

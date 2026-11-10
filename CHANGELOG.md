@@ -12,6 +12,7 @@ Each published package keeps its own changelog, written by release-please:
 - [`@siteping/adapter-kit`](./packages/adapter-kit/CHANGELOG.md)
 - [`@siteping/screenshot-storage`](./packages/screenshot-storage/CHANGELOG.md)
 - [`@siteping/integration-issues`](./packages/integration-issues/CHANGELOG.md)
+- [`@siteping/integration-notify`](./packages/integration-notify/CHANGELOG.md)
 - [`@siteping/mcp`](./packages/mcp/CHANGELOG.md)
 - [`@siteping/cli`](./packages/cli/CHANGELOG.md)
 

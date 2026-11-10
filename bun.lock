@@ -57,7 +57,7 @@
     },
     "packages/adapter-drizzle": {
       "name": "@siteping/adapter-drizzle",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.13",
         "@libsql/client": "^0.18.0",
@@ -160,6 +160,15 @@
         "mdast-util-from-markdown": "^2.1.0",
       },
     },
+    "packages/integration-notify": {
+      "name": "@siteping/integration-notify",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@siteping/adapter-memory": "workspace:*",
+        "@siteping/core": "workspace:*",
+        "@siteping/server": "workspace:*",
+      },
+    },
     "packages/mcp": {
       "name": "@siteping/mcp",
       "version": "0.0.0",
@@ -174,7 +183,7 @@
     },
     "packages/screenshot-storage": {
       "name": "@siteping/screenshot-storage",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "devDependencies": {
         "@aws-crypto/sha256-js": "^5.2.0",
         "@electric-sql/pglite": "^0.5.13",
@@ -193,7 +202,7 @@
     },
     "packages/server": {
       "name": "@siteping/server",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "dependencies": {
         "zod": "^4.6.7",
       },
@@ -206,7 +215,7 @@
     },
     "packages/widget": {
       "name": "@siteping/widget",
-      "version": "0.12.2",
+      "version": "0.12.3",
       "dependencies": {
         "@medv/finder": "^4.0.2",
         "html2canvas-pro": "^2.5.2",
@@ -847,6 +856,8 @@
     "@siteping/demo": ["@siteping/demo@workspace:apps/demo"],
 
     "@siteping/integration-issues": ["@siteping/integration-issues@workspace:packages/integration-issues"],
+
+    "@siteping/integration-notify": ["@siteping/integration-notify@workspace:packages/integration-notify"],
 
     "@siteping/mcp": ["@siteping/mcp@workspace:packages/mcp"],
 

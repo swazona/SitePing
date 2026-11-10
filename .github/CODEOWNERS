@@ -11,6 +11,7 @@ packages/adapter-localstorage/ @NeosiaNexus
 packages/adapter-kit/ @NeosiaNexus
 packages/server/    @NeosiaNexus
 packages/integration-issues/ @NeosiaNexus
+packages/integration-notify/ @NeosiaNexus
 packages/mcp/        @NeosiaNexus
 packages/screenshot-storage/ @NeosiaNexus
 packages/cli/       @NeosiaNexus

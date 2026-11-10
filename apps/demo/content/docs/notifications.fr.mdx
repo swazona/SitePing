@@ -1,0 +1,347 @@
+---
+title: Notifications d'équipe
+description: Publier les nouveaux feedbacks, les changements de statut et les réponses sur Slack, Telegram, WhatsApp, par e-mail ou par un webhook signé via le notifyTeam du serveur — un seul contrat de canal pour tout autre débouché.
+---
+
+`@siteping/integration-notify` construit l'option [`notifyTeam`](/fr/docs/server#prévenir-léquipe) du serveur pour que votre équipe apprenne ce qui arrive aux feedbacks là où elle travaille déjà :
+
+- **created** → un nouveau feedback est arrivé ;
+- **resolved** → il a été fermé, comme résolu ou sans suite ; **reopened** → un feedback fermé a été rouvert ;
+- **replied** → quelqu'un a répondu sur son [fil](/fr/docs/comments) — par défaut seulement les réponses de l'auteur, pas celles de l'équipe.
+
+Chaque événement devient un message neutre — un titre, le message ou la réponse, des champs (projet, type, statut, page, auteur, étape du parcours, chemin du composant React) et des liens (la page, la capture, l'enregistrement d'écran, votre tableau de bord) — que chaque canal affiche à sa façon.
+
+```bash
+npm i @siteping/integration-notify
+```
+
+Il tourne partout où tourne le [serveur](/fr/docs/server) : l'API Fetch et Web Crypto, aucune dépendance, pas de SMTP. Il ne dépend d'aucune version du serveur : son notificateur reprend les types du serveur structurellement, il s'installe donc à côté de `@siteping/server` ou de [`@siteping/adapter-prisma`](/fr/docs/adapters/prisma).
+
+## Démarrage rapide
+
+```ts
+// app/api/siteping/route.ts
+import { after } from "next/server";
+import { createSitepingHandler } from "@siteping/server";
+import { createTeamNotifier } from "@siteping/integration-notify";
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+import { createTelegramChannel } from "@siteping/integration-notify/telegram";
+import { store } from "@/lib/siteping-store";
+
+export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  waitUntil: after, // garde les envois en vie après la réponse
+  notifyTeam: createTeamNotifier({
+    siteUrl: "https://acme.com",
+    dashboardUrl: (feedback) => `https://admin.acme.com/feedback/${feedback.id}`,
+    locale: "fr",
+    channels: [
+      createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! }),
+      {
+        channel: createTelegramChannel({ botToken: process.env.TELEGRAM_BOT_TOKEN!, chatId: -1001234567890 }),
+        events: ["created"], // nouveaux feedbacks seulement
+      },
+    ],
+  }),
+});
+```
+
+Le serveur n'attend jamais `notifyTeam` : une API de chat lente ne retient jamais la requête du widget. Sur les runtimes serverless et edge, passez `waitUntil` (`after` de Next.js, `waitUntil` de `@vercel/functions` ou de `cloudflare:workers`), sans quoi le runtime peut geler les envois une fois la réponse partie.
+
+## Canaux
+
+Chaque canal a son propre point d'entrée : en importer un n'embarque jamais les autres. Chaque destination — URL de webhook, jeton, identifiant de discussion, numéro de téléphone, destinataires — vient des options du canal, lues dans votre environnement, jamais d'une requête. Une URL de destination doit être en `https` (`http` seulement sur `localhost`), les redirections ne sont jamais suivies, et aucune, ni aucun jeton, n'apparaît dans une erreur ou un journal.
+
+### Slack
+
+```ts
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+
+createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! });
+```
+
+Créez un [webhook entrant](https://api.slack.com/messaging/webhooks) pour le canal Slack où publier (un webhook par canal). Le message est en [Block Kit](https://api.slack.com/block-kit) : un en-tête, le message, jusqu'à 10 champs et une ligne de liens. Le déploiement des aperçus de liens est désactivé.
+
+| Option | Type | Défaut | |
+|---|---|---|---|
+| `webhookUrl` | `string` | — | L'URL du webhook — un secret |
+| `name` | `string` | `"slack"` | Nomme le canal dans les journaux et les résultats |
+| `fetch` | `typeof fetch` | `fetch` global | |
+
+Limites appliquées : en-tête 150 caractères, message 3 000, chaque champ 2 000, 10 champs, 5 liens.
+
+### Telegram
+
+```ts
+import { createTelegramChannel } from "@siteping/integration-notify/telegram";
+
+createTelegramChannel({ botToken: process.env.TELEGRAM_BOT_TOKEN!, chatId: -1001234567890 });
+```
+
+Créez un bot avec [@BotFather](https://t.me/BotFather), ajoutez-le au groupe (ou comme administrateur du canal) et utilisez l'identifiant numérique de la discussion. Le message passe par [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) en mode HTML, le message en citation, aperçus de liens désactivés.
+
+| Option | Type | Défaut | |
+|---|---|---|---|
+| `botToken` | `string` | — | `<chiffres>:<secret>` — vérifié à la création, puisqu'il entre dans le chemin de l'URL |
+| `chatId` | `string \| number` | — | Un identifiant numérique (négatif pour un groupe) ou `@nomducanal` |
+| `messageThreadId` | `number` | — | Un sujet de forum où publier |
+| `disableNotification` | `boolean` | `false` | Envoi silencieux |
+| `apiBaseUrl` | `string` | `https://api.telegram.org` | Un serveur Bot API auto-hébergé |
+| `name`, `fetch` | | `"telegram"` | |
+
+Le texte visible reste sous les 4 096 caractères de Telegram : le message est coupé en premier. Le `retry_after` d'une réponse `429` fixe le délai de la tentative suivante.
+
+### WhatsApp
+
+```ts
+import { createWhatsAppChannel } from "@siteping/integration-notify/whatsapp";
+
+createWhatsAppChannel({
+  accessToken: process.env.WHATSAPP_TOKEN!,
+  phoneNumberId: "123456789012345",
+  to: "+33612345678",
+});
+```
+
+Via la [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api) de Meta : le jeton d'un utilisateur système avec `whatsapp_business_messaging`, l'identifiant du numéro émetteur, et un destinataire par canal (ajoutez un canal par membre de l'équipe).
+
+**La fenêtre de 24 heures.** Un message texte libre n'est délivré que si le destinataire a écrit à votre numéro professionnel dans les dernières 24 heures. Une notification ouvre la conversation : hors de cette fenêtre, Meta la refuse (erreur `131047`, signalée comme non réessayable). Pour joindre un destinataire à tout moment, faites approuver un modèle *utility* dans WhatsApp Manager et envoyez-le à la place :
+
+```ts
+createWhatsAppChannel({
+  accessToken: process.env.WHATSAPP_TOKEN!,
+  phoneNumberId: "123456789012345",
+  to: "+33612345678",
+  // Un modèle dont le corps est par exemple : "{{1}} : {{2}}"
+  template: { name: "siteping_feedback", language: "fr", parameters: (message) => [message.title, message.summary] },
+});
+```
+
+Les variables d'un modèle ne peuvent contenir ni saut de ligne, ni tabulation, ni plus de quatre espaces de suite : le canal les aplatit et coupe chacune à 1 024 caractères (une variable vide devient `-`). Sans `parameters`, les variables sont le titre et le message. Meta facture les messages de modèle à l'unité.
+
+| Option | Type | Défaut | |
+|---|---|---|---|
+| `accessToken` | `string` | — | Un secret |
+| `phoneNumberId` | `string` | — | Chiffres seulement |
+| `to` | `string` | — | Format international, avec ou sans `+` |
+| `template` | `{ name, language, parameters? }` | — | Envoyer ce modèle approuvé au lieu d'un texte |
+| `apiVersion` | `string` | `"v23.0"` | Version de la Graph API |
+| `apiBaseUrl` | `string` | `https://graph.facebook.com` | |
+| `name`, `fetch` | | `"whatsapp"` | |
+
+Un message texte reste sous 4 096 caractères, sans aperçu de lien. WhatsApp n'offre aucun moyen d'échapper ses marqueurs `*gras*`, `_italique_`, `~barré~` et l'accent grave : le message d'un visiteur peut s'en servir ; il ne peut mentionner personne.
+
+### E-mail
+
+Le canal ne parle pas SMTP : vous lui confiez le `send` de votre transport. Avec [nodemailer](https://nodemailer.com) :
+
+```ts
+import nodemailer from "nodemailer";
+import { createEmailChannel } from "@siteping/integration-notify/email";
+
+const transport = nodemailer.createTransport(process.env.SMTP_URL);
+
+createEmailChannel({
+  to: ["equipe@acme.com"],
+  from: "SitePing <feedback@acme.com>",
+  subjectPrefix: "[acme]",
+  send: (mail) => transport.sendMail(mail),
+});
+```
+
+`send` reçoit `{ to, from?, subject, text, html, headers }` : un corps texte et un corps HTML, et les en-têtes `X-Siteping-Event` et `X-Siteping-Feedback` pour vos filtres de messagerie. La même forme sert avec Resend, Postmark ou SES moyennant une ligne de conversion. L'objet tient sur une ligne (pas d'injection d'en-tête par un saut de ligne), et `to` comme `from` doivent chacun être une seule adresse, sans virgule ni saut de ligne qui en ajouterait une autre.
+
+Un `send` qui lève est réessayé : un transport qui a pu envoyer avant d'échouer peut donc envoyer deux fois.
+
+### Webhook signé
+
+Pour n8n, Zapier, Make, votre propre service — tout ce qui accepte un POST JSON :
+
+```ts
+import { createWebhookChannel } from "@siteping/integration-notify/webhook";
+
+createWebhookChannel({ url: "https://n8n.acme.com/webhook/siteping", secret: process.env.NOTIFY_WEBHOOK_SECRET! });
+```
+
+Le corps est `{ type: "siteping.notification", version: 1, deliveryId, message }`, `message` étant le [message](#le-message) tel quel. En-têtes :
+
+| En-tête | |
+|---|---|
+| `X-Siteping-Signature` | `sha256=` + le HMAC-SHA256 hexadécimal de `<timestamp>.<corps brut>` sous `secret` |
+| `X-Siteping-Timestamp` | Heure Unix de la tentative, en secondes |
+| `X-Siteping-Event` | `created`, `resolved`, `reopened` ou `replied` |
+| `X-Siteping-Delivery` | Partagé par les nouvelles tentatives d'une même notification : dédupliquez dessus |
+
+`secret` doit compter au moins 32 caractères. `headers` ajoute des en-têtes fixes (un `Authorization` attendu par votre récepteur) ; les quatre ci-dessus et `Content-Type` ne peuvent pas être remplacés. Un envoi refusé n'est signalé que par son statut : la réponse du récepteur pourrait refléter la requête.
+
+**Le vérifier.** Contrôlez la signature sur les octets bruts, avant de parser, et refusez les horodatages périmés (rejeux). `verifyNotificationSignature` fait les deux, en comparant en temps constant via Web Crypto :
+
+```ts
+import { verifyNotificationSignature } from "@siteping/integration-notify/webhook";
+
+export async function POST(request: Request) {
+  const body = await request.text();
+  const authentic = await verifyNotificationSignature({
+    secret: process.env.NOTIFY_WEBHOOK_SECRET!,
+    body,
+    signature: request.headers.get("x-siteping-signature"),
+    timestamp: request.headers.get("x-siteping-timestamp"),
+    // toleranceSeconds: 300 (défaut)
+  });
+  if (!authentic) return new Response(null, { status: 401 });
+  const { message } = JSON.parse(body);
+  // …
+  return new Response(null, { status: 204 });
+}
+```
+
+Sans le paquet, en Node — ne comparez jamais des signatures avec `===`, qui trahit combien de caractères concordent :
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(secret: string, body: Buffer, signature: string, timestamp: string): boolean {
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = Buffer.from(
+    `sha256=${createHmac("sha256", secret).update(`${timestamp}.`).update(body).digest("hex")}`,
+  );
+  const received = Buffer.from(signature);
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+```
+
+**Discord, Microsoft Teams et autres formats.** `body` remplace le JSON par celui du récepteur, toujours signé. Ses textes sont ceux du message : bruts, non échappés et saisis par des visiteurs — échappez-les pour le récepteur et désactivez ses mentions. Discord :
+
+```ts
+createWebhookChannel({
+  url: process.env.DISCORD_WEBHOOK_URL!,
+  secret: process.env.NOTIFY_WEBHOOK_SECRET!, // Discord ignore la signature
+  body: (message) => ({
+    content: `**${message.title.replace(/[*_~`|>\\]/g, "\\$&")}**\n${message.summary.slice(0, 1800)}`,
+    allowed_mentions: { parse: [] }, // pas de @everyone, quoi que dise le texte
+  }),
+});
+```
+
+## Routage
+
+Un canal placé dans `channels` reçoit toutes les notifications. Pour le restreindre, passez une route à la place :
+
+```ts
+channels: [
+  createSlackChannel({ webhookUrl: process.env.SLACK_ALL_URL! }),
+  { channel: createSlackChannel({ webhookUrl: process.env.SLACK_BUGS_URL!, name: "slack:bugs" }),
+    filter: (message) => message.feedbackType === "bug" },
+  { channel: createTelegramChannel({ botToken, chatId }), events: ["created", "replied"], projects: ["acme"] },
+],
+```
+
+| Champ de route | |
+|---|---|
+| `channel` | Le canal |
+| `events` | Les événements qu'il reçoit ; tous par défaut. Un événement inconnu lève à la création |
+| `projects` | Les `projectName` qu'il reçoit ; tous par défaut |
+| `filter` | `(message) => boolean`, toute autre règle. Une exception compte comme un envoi échoué pour ce canal |
+
+## Options
+
+`createTeamNotifier(options)` :
+
+| Option | Type | Défaut | |
+|---|---|---|---|
+| `channels` | `Array<NotificationChannel \| NotificationRoute>` | — | Où partent les notifications — voir [routage](#routage) |
+| `siteUrl` | `string` | — | L'origine de votre site. Les chemins de page s'y résolvent, et le lien vers la page ne pointe que vers elle : sans elle, la page s'affiche en texte, jamais en lien. Lève à la création si ce n'est pas une URL http(s) |
+| `deepLinkParam` | `string \| false` | `"siteping"` | Le paramètre [`deepLink`](/fr/docs/widget/configuration) du widget ajouté au lien de la page, ou `false` |
+| `dashboardUrl` | `(feedback) => string \| null \| undefined` | — | L'adresse d'un feedback dans votre tableau de bord, pour un lien « Ouvrir dans le tableau de bord ». Gardée si c'est une URL http(s) |
+| `locale` | `"en" \| "fr" \| "de" \| "es" \| "it" \| "pt" \| "ru" \| "ja" \| "ko"` | `"en"` | Langue des titres et des libellés |
+| `strings` | `Partial<NotificationStrings>` | — | En remplacer certains, par exemple `{ titleCreated: "🐞 {type} sur {project}" }` |
+| `redact` | `{ secrets?, emails?, queryStrings? } \| false` | secrets masqués | Voir [ce que contrôlent les visiteurs](#ce-que-contrôlent-les-visiteurs) |
+| `includeAuthorEmail` | `boolean` | `false` | Afficher l'e-mail de l'auteur à côté de son nom |
+| `teamReplies` | `boolean` | `false` | Notifier aussi les réponses de l'équipe |
+| `formatMessage` | `(message, feedback, event) => message` | — | Réécrire le message intégré. Le résultat passe toujours par l'échappement et les limites de chaque canal, mais plus par le masquage : masquez ce que vous ajoutez |
+| `retries` | `number` | `2` | Nouvelles tentatives par canal après un échec (de 0 à 10) |
+| `retryDelayMs` | `number` | `1000` | Attente avant la première nouvelle tentative, doublée à chaque suivante, avec gigue (50 à 100 % de sa valeur) |
+| `maxRetryDelayMs` | `number` | `30000` | Attente maximale entre deux tentatives, `Retry-After` d'un débouché compris |
+| `timeoutMs` | `number` | `10000` | Durée maximale d'une tentative : au-delà, elle échoue et son `signal` est interrompu |
+| `logger` | `{ error(message, context) }` | `console` | Où vont les échecs |
+
+## Latence et échecs
+
+- **Jamais sur le chemin de la requête.** Le serveur confie la promesse du notificateur à `waitUntil` et répond aussitôt. Tous les canaux partent en même temps, chacun avec ses propres tentatives et son délai : un canal qui échoue, lève ou se bloque au-delà de `timeoutMs` ne retarde ni n'arrête jamais les autres, et rien n'atteint la requête.
+- **Nouvelles tentatives.** Un échec réseau, un délai dépassé, une réponse `408`, `425`, `429` ou `5xx`, ou toute erreur levée par un canal personnalisé est réessayé, jusqu'à `retries` fois ; un autre `4xx` (jeton révoqué, contenu refusé, canal Slack archivé) ne l'est pas. Le `Retry-After` d'un débouché (le `retry_after` de Telegram) fixe le délai, plafonné par `maxRetryDelayMs`. Un envoi qui a dépassé le délai peut tout de même aboutir : un débouché qui l'a reçu peut recevoir aussi la nouvelle tentative (le `X-Siteping-Delivery` du webhook permet au récepteur de dédupliquer).
+- **Journaux.** Un canal qui abandonne est journalisé une fois, sous `[siteping] Notification to <name> failed`, avec l'événement, le feedback, le projet, le nombre de tentatives, le statut et la description du débouché — jamais une URL, un jeton, ni la `cause` d'une erreur, qu'un canal personnalisé peut remplir avec sa requête.
+- **Synchronisations depuis un tracker.** Un statut changé depuis GitHub, Linear, Jira ou Plane par les [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) ne passe pas par le handler. Appelez le notificateur depuis leur `onStatusSynced` :
+
+```ts
+const notifyTeam = createTeamNotifier({ channels });
+
+export const POST = createGitHubWebhookHandler({
+  repository: "acme/site",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  store,
+  onStatusSynced: (feedback, { status }) =>
+    notifyTeam(feedback, status === "resolved" || status === "wont_fix" ? { type: "resolved", status } : { type: "reopened", status }),
+});
+```
+
+## Ce que contrôlent les visiteurs
+
+Tout ce qu'une notification cite vient du navigateur d'un visiteur : le message et les réponses, mais aussi le nom de l'auteur, l'URL de la page, le nom de projet qu'envoie un widget public, le titre du parcours et les noms de composants. Donc :
+
+- **Masquage.** Chaque texte et chaque URL passe par les motifs de l'[export du tableau de bord](/fr/docs/dashboard) et du [serveur MCP](/fr/docs/mcp) : jetons bearer, JWT, clés d'API connues (Stripe, OpenAI, Anthropic, GitHub, GitLab, Slack, AWS, Google) et valeurs de type `token=` / `password:` deviennent `[secret]` (activé par défaut) ; les e-mails deviennent `[email]` et les chaînes de requête `?[redacted]` sur demande. `redact: false` désactive le tout.
+- **Caractères invisibles.** Les caractères de contrôle, les caractères de largeur nulle et les forçages et isolats bidirectionnels (Trojan Source) sont retirés de chaque texte, `redact: false` compris, et chaque fin de ligne est normalisée : un titre ou un champ tient toujours sur une ligne.
+- **Échappement par débouché.** Slack : dans les blocs, le texte des visiteurs ne se trouve que dans des objets `plain_text`, jamais analysés pour les mentions ni les liens ; là et dans le `text` de repli qu'affichent les notifications, `&`, `<` et `>` sont échappés (`<!channel>` ou `<https://evil|clic>` restent du texte) et `@channel`, `@here` et `@everyone` sont cassés par une espace de largeur nulle. Seule la ligne de liens est en `mrkdwn`, avec les libellés du notificateur et des URL analysées. Telegram et e-mail : échappement HTML, un `<a>` ou un `<script>` d'un visiteur reste du texte. Un message construit par `formatMessage` passe par le même échappement.
+- **Liens.** Seules les URL `http(s)` absolues deviennent des liens. Le lien vers la page ne pointe que vers `siteUrl` — un feedback qui prétend venir d'un autre site affiche son URL en texte — et perd ses identifiants ; une capture `data:` en ligne (sans [stockage des captures](/fr/docs/adapters/screenshot-storage)) n'a pas de lien. Les aperçus de Slack, Telegram et WhatsApp sont désactivés : aucun débouché ne va chercher une page nommée par un visiteur.
+- **Limites.** Chaque texte est coupé aux limites de son débouché, après échappement quand le débouché compte les caractères échappés, jamais au milieu d'une entité ni d'une paire de substitution.
+
+## Le message
+
+`buildNotificationMessage(feedback, event, options)` construit le message qu'envoie `createTeamNotifier`, avec les mêmes options de message. Un canal reçoit :
+
+| Champ | |
+|---|---|
+| `event` | `created`, `resolved`, `reopened` ou `replied` |
+| `feedbackId`, `projectName`, `feedbackType`, `status` | Le feedback, son statut une fois l'événement survenu |
+| `title` | Une ligne, par exemple `Nouveau retour (bug) sur acme`, dans la langue du notificateur |
+| `summary` | Le message du feedback, ou le corps de la réponse — peut tenir sur plusieurs lignes |
+| `fields` | `{ key, label, value }[]` : `project`, `type`, `status` (pas sur `created`), `page`, `reporter`, `author` (réponses), `flow`, `component`, quand ils existent |
+| `links` | `{ key, label, url }[]` : `page`, `screenshot`, `recording`, `dashboard`, quand ils existent |
+| `reply` | `{ authorName, authorRole }` sur `replied` |
+| `occurredAt` | ISO 8601 : la création du feedback, sa dernière mise à jour, ou la création de la réponse |
+| `locale` | La langue des libellés |
+
+Ses textes sont bruts : masqués et nettoyés, mais **non échappés**.
+
+## Autres débouchés
+
+Un canal, c'est un nom et un `send` :
+
+```ts
+import type { NotificationChannel } from "@siteping/integration-notify";
+import { NotificationDeliveryError } from "@siteping/integration-notify";
+
+const pushover: NotificationChannel = {
+  name: "pushover",
+  async send(message, { signal }) {
+    const response = await fetch("https://api.pushover.net/1/messages.json", {
+      method: "POST",
+      signal, // interrompu au-delà de timeoutMs
+      body: new URLSearchParams({
+        token: process.env.PUSHOVER_TOKEN!,
+        user: process.env.PUSHOVER_USER!,
+        title: message.title,
+        message: message.summary || message.title,
+      }),
+    });
+    if (!response.ok) {
+      throw new NotificationDeliveryError("pushover", `status ${response.status}`, {
+        status: response.status,
+        retryable: response.status >= 500 || response.status === 429,
+      });
+    }
+  },
+};
+```
+
+Résolvez une fois que le débouché a accepté le message ; levez sinon. Une `NotificationDeliveryError` avec `retryable: false` arrête les tentatives ; toute autre exception est réessayée. Échappez les textes du message pour votre débouché : ils sont bruts et contrôlés par les visiteurs. `createNotificationDispatcher({ channels, … })` fournit seul la diffusion, les routes, les tentatives et les délais, pour des messages que vous construisez vous-même ; `dispatch(message)` se résout avec le résultat de chaque canal (`sent`, `skipped` ou `failed`, avec ses tentatives) et ne rejette jamais.

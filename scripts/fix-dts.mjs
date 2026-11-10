@@ -59,6 +59,14 @@ for (const file of coreFiles) {
   const content = readFileSync(join(coreDist, file), "utf8");
   const base =
     file === "index.d.ts" ? "siteping-core" : file === "testing.d.ts" ? "siteping-core-testing" : file.slice(0, -5);
+  // A package entry named like a core module (an `email` entry beside core's
+  // email.d.ts) would be silently replaced by core's declarations.
+  if (ownDts.includes(`${base}.d.ts`) || ownDts.includes(`${base}.d.cts`)) {
+    console.error(
+      `  COLLISION: the package's own ${base}.d.ts would be overwritten by core's ${file} — rename the entry`,
+    );
+    process.exit(1);
+  }
   writeFileSync(join(targetDir, `${base}.d.ts`), content, "utf8");
   writeFileSync(join(targetDir, `${base}.d.cts`), toCjsSpecifiers(content), "utf8");
   console.log(`  Copied: ${file} -> ${base}.d.ts + ${base}.d.cts`);

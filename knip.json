@@ -36,6 +36,10 @@
       "entry": ["__tests__/**/*.{test,test-d}.{ts,tsx}"],
       "project": ["src/**", "__tests__/**"]
     },
+    "packages/integration-notify": {
+      "entry": ["__tests__/**/*.{test,test-d}.{ts,tsx}"],
+      "project": ["src/**", "__tests__/**"]
+    },
     "packages/screenshot-storage": {
       "entry": ["__tests__/**/*.{test,test-d}.{ts,tsx}"],
       "project": ["src/**", "__tests__/**"]

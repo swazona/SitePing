@@ -1,0 +1,346 @@
+---
+title: Team notifications
+description: Post new feedback, status changes and replies to Slack, Telegram, WhatsApp, email or a signed webhook through the server's notifyTeam — one channel contract for any other outlet.
+---
+
+`@siteping/integration-notify` builds the server's [`notifyTeam`](/docs/server#notifying-the-team) option so your team hears about feedback where it already works:
+
+- **created** → a new feedback came in;
+- **resolved** → it was closed, as resolved or won't fix; **reopened** → a closed one was opened again;
+- **replied** → someone answered on its [thread](/docs/comments) — by default only the reporter's replies, not the team's own.
+
+Each event becomes one channel-neutral message — a title, the message or the reply, fields (project, type, status, page, reporter, flow step, React component path) and links (the page, the screenshot, the screen recording, your dashboard) — that every channel renders its own way.
+
+```bash
+npm i @siteping/integration-notify
+```
+
+It runs wherever the [server](/docs/server) runs: the Fetch API and Web Crypto, no dependencies, no SMTP. It depends on no server version: its notifier matches the server's types structurally, so it installs next to `@siteping/server` or [`@siteping/adapter-prisma`](/docs/adapters/prisma).
+
+## Quick start
+
+```ts
+// app/api/siteping/route.ts
+import { after } from "next/server";
+import { createSitepingHandler } from "@siteping/server";
+import { createTeamNotifier } from "@siteping/integration-notify";
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+import { createTelegramChannel } from "@siteping/integration-notify/telegram";
+import { store } from "@/lib/siteping-store";
+
+export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  waitUntil: after, // keeps the deliveries alive after the response
+  notifyTeam: createTeamNotifier({
+    siteUrl: "https://acme.com",
+    dashboardUrl: (feedback) => `https://admin.acme.com/feedback/${feedback.id}`,
+    channels: [
+      createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! }),
+      {
+        channel: createTelegramChannel({ botToken: process.env.TELEGRAM_BOT_TOKEN!, chatId: -1001234567890 }),
+        events: ["created"], // new feedback only
+      },
+    ],
+  }),
+});
+```
+
+The server never awaits `notifyTeam`: a slow chat API never holds the widget's request. On serverless and edge runtimes, pass `waitUntil` (Next.js `after`, `waitUntil` from `@vercel/functions` or `cloudflare:workers`), or the runtime may freeze the deliveries once the response is sent.
+
+## Channels
+
+Each channel is its own entry, so importing one never pulls the others. Every destination — a webhook URL, a token, a chat id, a phone number, recipients — comes from the channel's options, read from your environment, never from a request. A destination URL must be `https` (plain `http` only on `localhost`), redirects are never followed, and none of them, nor any token, ever appears in an error or a log.
+
+### Slack
+
+```ts
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+
+createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! });
+```
+
+Create an [incoming webhook](https://api.slack.com/messaging/webhooks) for the Slack channel to post to (one webhook per channel). The message is [Block Kit](https://api.slack.com/block-kit): a header, the message, up to 10 fields and a line of links. Link unfurling is off.
+
+| Option | Type | Default | |
+|---|---|---|---|
+| `webhookUrl` | `string` | — | The webhook's URL — a secret |
+| `name` | `string` | `"slack"` | Names the channel in logs and results |
+| `fetch` | `typeof fetch` | global `fetch` | |
+
+Limits applied: header 150 characters, message 3,000, each field 2,000, 10 fields, 5 links.
+
+### Telegram
+
+```ts
+import { createTelegramChannel } from "@siteping/integration-notify/telegram";
+
+createTelegramChannel({ botToken: process.env.TELEGRAM_BOT_TOKEN!, chatId: -1001234567890 });
+```
+
+Create a bot with [@BotFather](https://t.me/BotFather), add it to the group (or as an admin of the channel), and use the chat's numeric id. The message goes through [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) in HTML mode, the message in a quote, link previews off.
+
+| Option | Type | Default | |
+|---|---|---|---|
+| `botToken` | `string` | — | `<digits>:<secret>` — checked at creation, since it goes into the URL path |
+| `chatId` | `string \| number` | — | A numeric chat id (groups are negative) or `@channelusername` |
+| `messageThreadId` | `number` | — | A forum topic to post in |
+| `disableNotification` | `boolean` | `false` | Send silently |
+| `apiBaseUrl` | `string` | `https://api.telegram.org` | A self-hosted Bot API server |
+| `name`, `fetch` | | `"telegram"` | |
+
+The visible text stays within Telegram's 4,096 characters: the message is cut first. A `429` answer's `retry_after` sets the next attempt's delay.
+
+### WhatsApp
+
+```ts
+import { createWhatsAppChannel } from "@siteping/integration-notify/whatsapp";
+
+createWhatsAppChannel({
+  accessToken: process.env.WHATSAPP_TOKEN!,
+  phoneNumberId: "123456789012345",
+  to: "+33612345678",
+});
+```
+
+Through Meta's [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api): a system user's token with `whatsapp_business_messaging`, the sending number's id, and one recipient per channel (add one channel per teammate).
+
+**The 24-hour window.** A free-form text message is only delivered when the recipient wrote to your business number within the last 24 hours. A notification starts the conversation, so outside that window Meta refuses it (error `131047`, reported as not retryable). To reach a recipient at any time, have a *utility* template approved in WhatsApp Manager and send it instead:
+
+```ts
+createWhatsAppChannel({
+  accessToken: process.env.WHATSAPP_TOKEN!,
+  phoneNumberId: "123456789012345",
+  to: "+33612345678",
+  // A template whose body is, for instance: "{{1}}: {{2}}"
+  template: { name: "siteping_feedback", language: "en_US", parameters: (message) => [message.title, message.summary] },
+});
+```
+
+Template variables may hold no line break or tab and no more than four spaces in a row: the channel flattens them and cuts each to 1,024 characters (an empty one becomes `-`). Without `parameters`, the variables are the title and the message. Template messages are billed per message by Meta.
+
+| Option | Type | Default | |
+|---|---|---|---|
+| `accessToken` | `string` | — | A secret |
+| `phoneNumberId` | `string` | — | Digits only |
+| `to` | `string` | — | International format, with or without `+` |
+| `template` | `{ name, language, parameters? }` | — | Send this approved template instead of text |
+| `apiVersion` | `string` | `"v23.0"` | Graph API version |
+| `apiBaseUrl` | `string` | `https://graph.facebook.com` | |
+| `name`, `fetch` | | `"whatsapp"` | |
+
+A text message stays within 4,096 characters and has link previews off. WhatsApp has no way to escape its `*bold*`, `_italic_`, `~strike~` and backtick markers, so a visitor's message may use them; it cannot mention anyone.
+
+### Email
+
+The channel speaks no SMTP: you hand it your transport's `send`. With [nodemailer](https://nodemailer.com):
+
+```ts
+import nodemailer from "nodemailer";
+import { createEmailChannel } from "@siteping/integration-notify/email";
+
+const transport = nodemailer.createTransport(process.env.SMTP_URL);
+
+createEmailChannel({
+  to: ["team@acme.com"],
+  from: "SitePing <feedback@acme.com>",
+  subjectPrefix: "[acme]",
+  send: (mail) => transport.sendMail(mail),
+});
+```
+
+`send` receives `{ to, from?, subject, text, html, headers }`: a plain-text and an HTML body, and `X-Siteping-Event` and `X-Siteping-Feedback` headers for your mail filters. The same shape works with Resend, Postmark or SES with a line of mapping. The subject is one line (no header injection through a line break), and `to` and `from` must each be one address, without a comma or a line break that could add another.
+
+A `send` that throws is retried, so a transport that may have sent before failing can send twice.
+
+### Signed webhook
+
+For n8n, Zapier, Make, your own service — anything that takes a JSON POST:
+
+```ts
+import { createWebhookChannel } from "@siteping/integration-notify/webhook";
+
+createWebhookChannel({ url: "https://n8n.acme.com/webhook/siteping", secret: process.env.NOTIFY_WEBHOOK_SECRET! });
+```
+
+The body is `{ type: "siteping.notification", version: 1, deliveryId, message }`, `message` being the [message](#the-message) as is. Headers:
+
+| Header | |
+|---|---|
+| `X-Siteping-Signature` | `sha256=` + the hex HMAC-SHA256 of `<timestamp>.<raw body>` under `secret` |
+| `X-Siteping-Timestamp` | Unix time of the attempt, in seconds |
+| `X-Siteping-Event` | `created`, `resolved`, `reopened` or `replied` |
+| `X-Siteping-Delivery` | Shared by the retries of one notification: deduplicate on it |
+
+`secret` needs at least 32 characters. `headers` adds static headers (an `Authorization` your receiver expects); the four above and `Content-Type` cannot be overridden. A refused delivery is reported by its status only: the receiver's answer could echo the request.
+
+**Verifying it.** Check the signature over the raw bytes, before parsing, and refuse stale timestamps (replays). `verifyNotificationSignature` does both, comparing in constant time through Web Crypto:
+
+```ts
+import { verifyNotificationSignature } from "@siteping/integration-notify/webhook";
+
+export async function POST(request: Request) {
+  const body = await request.text();
+  const authentic = await verifyNotificationSignature({
+    secret: process.env.NOTIFY_WEBHOOK_SECRET!,
+    body,
+    signature: request.headers.get("x-siteping-signature"),
+    timestamp: request.headers.get("x-siteping-timestamp"),
+    // toleranceSeconds: 300 (default)
+  });
+  if (!authentic) return new Response(null, { status: 401 });
+  const { message } = JSON.parse(body);
+  // …
+  return new Response(null, { status: 204 });
+}
+```
+
+Without the package, in Node — never compare signatures with `===`, which leaks how many characters matched:
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(secret: string, body: Buffer, signature: string, timestamp: string): boolean {
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = Buffer.from(
+    `sha256=${createHmac("sha256", secret).update(`${timestamp}.`).update(body).digest("hex")}`,
+  );
+  const received = Buffer.from(signature);
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+```
+
+**Discord, Microsoft Teams and other formats.** `body` replaces the JSON with the receiver's own, still signed. Its texts are the message's: plain, unescaped and typed by visitors — escape them for the receiver and turn its mentions off. Discord:
+
+```ts
+createWebhookChannel({
+  url: process.env.DISCORD_WEBHOOK_URL!,
+  secret: process.env.NOTIFY_WEBHOOK_SECRET!, // Discord ignores the signature
+  body: (message) => ({
+    content: `**${message.title.replace(/[*_~`|>\\]/g, "\\$&")}**\n${message.summary.slice(0, 1800)}`,
+    allowed_mentions: { parse: [] }, // no @everyone, whatever the text says
+  }),
+});
+```
+
+## Routing
+
+A channel in `channels` takes every notification. To narrow it, pass a route instead:
+
+```ts
+channels: [
+  createSlackChannel({ webhookUrl: process.env.SLACK_ALL_URL! }),
+  { channel: createSlackChannel({ webhookUrl: process.env.SLACK_BUGS_URL!, name: "slack:bugs" }),
+    filter: (message) => message.feedbackType === "bug" },
+  { channel: createTelegramChannel({ botToken, chatId }), events: ["created", "replied"], projects: ["acme"] },
+],
+```
+
+| Route field | |
+|---|---|
+| `channel` | The channel |
+| `events` | Events it takes; all of them by default. An unknown one throws at creation |
+| `projects` | `projectName`s it takes; all of them by default |
+| `filter` | `(message) => boolean`, any other rule. A throw counts as a failed delivery for that channel |
+
+## Options
+
+`createTeamNotifier(options)`:
+
+| Option | Type | Default | |
+|---|---|---|---|
+| `channels` | `Array<NotificationChannel \| NotificationRoute>` | — | Where notifications go — see [routing](#routing) |
+| `siteUrl` | `string` | — | Your site's origin. Page paths resolve against it, and the page link only ever points to it: without it, the page is shown as text, never as a link. Throws at creation when it is not an http(s) URL |
+| `deepLinkParam` | `string \| false` | `"siteping"` | The widget's [`deepLink`](/docs/widget/configuration) parameter added to the page link, or `false` |
+| `dashboardUrl` | `(feedback) => string \| null \| undefined` | — | Your dashboard's address for a feedback, for an "Open in the dashboard" link. Kept when it is an http(s) URL |
+| `locale` | `"en" \| "fr" \| "de" \| "es" \| "it" \| "pt" \| "ru" \| "ja" \| "ko"` | `"en"` | Language of the titles and labels |
+| `strings` | `Partial<NotificationStrings>` | — | Override some of them, e.g. `{ titleCreated: "🐞 {type} on {project}" }` |
+| `redact` | `{ secrets?, emails?, queryStrings? } \| false` | secrets on | See [what visitors control](#what-visitors-control) |
+| `includeAuthorEmail` | `boolean` | `false` | Show the reporter's email beside their name |
+| `teamReplies` | `boolean` | `false` | Notify the team's own replies too |
+| `formatMessage` | `(message, feedback, event) => message` | — | Rewrite the built-in message. Its result still goes through each channel's escaping and limits, but not through the redaction: redact what you add |
+| `retries` | `number` | `2` | Retries per channel after a failed attempt (0 to 10) |
+| `retryDelayMs` | `number` | `1000` | Wait before the first retry, doubled on each next one, with jitter (50 to 100 % of it) |
+| `maxRetryDelayMs` | `number` | `30000` | Longest wait between attempts, an outlet's `Retry-After` included |
+| `timeoutMs` | `number` | `10000` | Longest attempt: past it, the attempt fails and its `signal` aborts |
+| `logger` | `{ error(message, context) }` | `console` | Where failures go |
+
+## Latency and failures
+
+- **Never in the request's way.** The server hands the notifier's promise to `waitUntil` and answers at once. Every channel runs at the same time, each with its own retries and timeout: a channel that fails, throws, or hangs past `timeoutMs` never delays nor stops the others, and nothing reaches the request.
+- **Retries.** A network failure, a timeout, a `408`, `425`, `429` or `5xx` answer, or any error a custom channel throws is retried, up to `retries` times; another `4xx` (a revoked token, a refused payload, an archived Slack channel) is not. An outlet's `Retry-After` (Telegram's `retry_after`) sets the delay, capped by `maxRetryDelayMs`. A delivery that timed out may still land: an outlet that took it can receive a retry too (the webhook's `X-Siteping-Delivery` lets a receiver deduplicate).
+- **Logs.** A channel that gives up is logged once, as `[siteping] Notification to <name> failed`, with the event, feedback, project, attempts, status and the outlet's own description — never a URL, a token, or an error's `cause`, which a custom channel may fill with its request.
+- **Tracker syncs.** A status changed from GitHub, Linear, Jira or Plane through the [issue tracker webhooks](/docs/issue-trackers#two-way-sync) does not go through the handler. Call the notifier from their `onStatusSynced`:
+
+```ts
+const notifyTeam = createTeamNotifier({ channels });
+
+export const POST = createGitHubWebhookHandler({
+  repository: "acme/site",
+  secret: process.env.GITHUB_WEBHOOK_SECRET!,
+  store,
+  onStatusSynced: (feedback, { status }) =>
+    notifyTeam(feedback, status === "resolved" || status === "wont_fix" ? { type: "resolved", status } : { type: "reopened", status }),
+});
+```
+
+## What visitors control
+
+Everything a notification quotes comes from a visitor's browser: the message and the replies, but also the reporter's name, the page URL, the project name a public widget sends, the flow title and the component names. So:
+
+- **Redaction.** Every text and URL goes through the patterns of the [dashboard export](/docs/dashboard) and the [MCP server](/docs/mcp): bearer tokens, JWTs, well-known API keys (Stripe, OpenAI, Anthropic, GitHub, GitLab, Slack, AWS, Google) and `token=` / `password:`-like values become `[secret]` (on by default); emails become `[email]` and query strings `?[redacted]` on request. `redact: false` turns all of it off.
+- **Invisible characters.** Control characters, zero-width characters and bidirectional overrides and isolates (Trojan Source) are removed from every text, `redact: false` included, and every line terminator is normalized: a title or a field is always one line.
+- **Escaping per outlet.** Slack: in the blocks, visitor text only ever sits in `plain_text` objects, never parsed for mentions or links; there and in the fallback `text` notifications show, `&`, `<` and `>` are escaped (so `<!channel>` or `<https://evil|click>` stay text) and `@channel`, `@here` and `@everyone` are broken by a zero-width space. Only the links line is `mrkdwn`, with the notifier's labels and parsed URLs. Telegram and email: HTML-escaped, so a visitor's `<a>` or `<script>` stays text. A custom message built by `formatMessage` goes through the same escaping.
+- **Links.** Only absolute `http(s)` URLs become links. The page link points to `siteUrl` alone — a feedback claiming another site's URL shows it as text — and drops credentials; an inline `data:` screenshot (no [screenshot storage](/docs/adapters/screenshot-storage)) gets no link. Slack, Telegram and WhatsApp previews are off, so no outlet fetches a visitor-named page.
+- **Limits.** Every text is cut to its outlet's limits, after escaping where the outlet counts escaped characters, never inside an entity or a surrogate pair.
+
+## The message
+
+`buildNotificationMessage(feedback, event, options)` builds the message `createTeamNotifier` sends, with the same message options. A channel receives:
+
+| Field | |
+|---|---|
+| `event` | `created`, `resolved`, `reopened` or `replied` |
+| `feedbackId`, `projectName`, `feedbackType`, `status` | The feedback, its status once the event happened |
+| `title` | One line, e.g. `New bug on acme`, in the notifier's locale |
+| `summary` | The feedback's message, or the reply's body — may span lines |
+| `fields` | `{ key, label, value }[]`: `project`, `type`, `status` (not on `created`), `page`, `reporter`, `author` (replies), `flow`, `component`, when present |
+| `links` | `{ key, label, url }[]`: `page`, `screenshot`, `recording`, `dashboard`, when present |
+| `reply` | `{ authorName, authorRole }` on `replied` |
+| `occurredAt` | ISO 8601: the feedback's creation, its last update, or the reply's creation |
+| `locale` | The labels' locale |
+
+Its texts are plain: redacted and cleaned, but **not escaped**.
+
+## Other outlets
+
+A channel is a name and a `send`:
+
+```ts
+import type { NotificationChannel } from "@siteping/integration-notify";
+import { NotificationDeliveryError } from "@siteping/integration-notify";
+
+const pushover: NotificationChannel = {
+  name: "pushover",
+  async send(message, { signal }) {
+    const response = await fetch("https://api.pushover.net/1/messages.json", {
+      method: "POST",
+      signal, // aborted past timeoutMs
+      body: new URLSearchParams({
+        token: process.env.PUSHOVER_TOKEN!,
+        user: process.env.PUSHOVER_USER!,
+        title: message.title,
+        message: message.summary || message.title,
+      }),
+    });
+    if (!response.ok) {
+      throw new NotificationDeliveryError("pushover", `status ${response.status}`, {
+        status: response.status,
+        retryable: response.status >= 500 || response.status === 429,
+      });
+    }
+  },
+};
+```
+
+Resolve once the outlet accepted the message; throw otherwise. A `NotificationDeliveryError` with `retryable: false` stops the retries; any other throw is retried. Escape the message's texts for your outlet: they are plain and visitor-controlled. `createNotificationDispatcher({ channels, … })` gives the fan-out, routes, retries and timeouts on their own, for messages you build yourself; `dispatch(message)` resolves with each channel's outcome (`sent`, `skipped` or `failed`, with its attempts) and never rejects.

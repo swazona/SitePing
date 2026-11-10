@@ -257,7 +257,7 @@ export interface SitepingCapabilities {
     recordings?: boolean | undefined;
 }
 
-export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_RATE_LIMIT_INVALID" | "CONFIG_RECORDING_UPLOAD_HOOK_MISSING" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
+export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED" | "CONFIG_NOTIFY_TEAM_UNSUPPORTED" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_RATE_LIMIT_INVALID" | "CONFIG_RECORDING_UPLOAD_HOOK_MISSING" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
 
 export interface SitepingCreatedComment extends CommentRecord {
     projectName: string;
@@ -291,6 +291,7 @@ export interface SitepingHandlerBaseOptions<Principal> {
     maxBodyBytes?: number | undefined;
     maxRecordingBytes?: number | undefined;
     notifyReporter?(feedback: FeedbackRecord, event: SitepingReporterEvent, context: SitepingRequestContext<Principal>): Promise<void> | void;
+    notifyTeam?(feedback: FeedbackRecord, event: SitepingTeamEvent, context: SitepingRequestContext<Principal>): Promise<void> | void;
     presentFeedback?(feedback: FeedbackRecord, context: SitepingRequestContext<Principal>): FeedbackRecord;
     rateLimit?: SitepingRateLimitOptions | undefined;
     recordingStorage?: RecordingStorage | undefined;
@@ -386,6 +387,10 @@ export interface SitepingStore {
     updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord>;
     verifyProjectOwnership(id: string, projectName: string): Promise<boolean>;
 }
+
+export type SitepingTeamEvent = SitepingReporterEvent | {
+    type: "created";
+};
 
 export interface SlackWebhookPayload {
     blocks: ReadonlyArray<SlackContextBlock | SlackHeaderBlock | SlackSectionBlock>;
