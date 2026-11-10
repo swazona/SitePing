@@ -531,6 +531,24 @@ export function testSitepingStore(
       });
     });
 
+    // getFeedback — optional
+
+    describe("getFeedback", () => {
+      it("returns the record by id, or null when it does not exist", async () => {
+        if (!store.getFeedback) return;
+        const created = await store.createFeedback(createInput({ clientId: "by-id" }));
+        expect((await store.getFeedback(created.id))?.clientId).toBe("by-id");
+        expect(await store.getFeedback("missing-id")).toBeNull();
+      });
+
+      it("reads the status a later update wrote", async () => {
+        if (!store.getFeedback) return;
+        const created = await store.createFeedback(createInput({ clientId: "by-id-updated" }));
+        await store.updateFeedback(created.id, { status: "resolved", resolvedAt: new Date() });
+        expect((await store.getFeedback(created.id))?.status).toBe("resolved");
+      });
+    });
+
     // ------------------------------------------------------------------
     // Round-trip — what a later read returns, not just the write's result
     // ------------------------------------------------------------------

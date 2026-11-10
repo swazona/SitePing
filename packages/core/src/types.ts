@@ -1132,6 +1132,14 @@ export interface SitepingStore {
    */
   verifyProjectOwnership(id: string, projectName: string): Promise<boolean>;
   /**
+   * Optional — the record with `id`, its thread included, or `null` (not
+   * error) when it does not exist. Read-only lookups by id: the server's
+   * `notifyReporter` reads the feedback a team reply answers with it, and
+   * tracker webhooks read a feedback's current status before changing it.
+   * Without it, those fall back to slower or coarser paths (see each).
+   */
+  getFeedback?(id: string): Promise<FeedbackRecord | null>;
+  /**
    * Optional — `createFeedback` that reports whether this call inserted the
    * record (`created: true`) or found an existing one with the same
    * `clientId` (`created: false`). The dedup check and the insert must be
