@@ -50,7 +50,10 @@ export function ComponentPath({ names }: ComponentPathProps): ReactElement {
     <div className="spd-crumbs">
       <ol ref={listRef} className="spd-crumbs-list" aria-label={t("drawer.componentPath")} tabIndex={-1}>
         {shown.map((item, position) => (
-          <li key={item === "fold" ? "fold" : item.index} className="spd-crumb">
+          <li
+            key={item === "fold" ? "fold" : item.index}
+            className={item === "fold" ? "spd-crumb spd-crumb-fixed" : "spd-crumb"}
+          >
             {position > 0 ? (
               <span className="spd-crumb-sep" aria-hidden="true">
                 ›

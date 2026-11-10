@@ -1008,16 +1008,22 @@ export const INBOX_CSS = `
   white-space: nowrap;
   outline: none;
 }
+/* Crumbs shrink in proportion to their length, so a long name gives up the
+   most; each clips its own overflow, never over its neighbours. */
 .spd-crumb {
   display: flex;
   align-items: baseline;
   flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
-/* The nearest component — the one annotated — never ellipsizes first. */
+/* The fold and the nearest component — the one annotated — stay whole; the
+   root keeps up to two fifths of the line. */
+.spd-crumb-fixed,
 .spd-crumb:last-child { flex-shrink: 0; max-width: 100%; }
+.spd-crumb:first-child:not(:last-child) { flex-shrink: 0; max-width: 40%; }
 .spd-crumb-name {
-  min-width: 3ch;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
