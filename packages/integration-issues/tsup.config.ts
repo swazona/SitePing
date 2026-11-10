@@ -12,6 +12,9 @@ export default defineConfig(
       index: "src/index.ts",
       github: "src/providers/github.ts",
       gitlab: "src/providers/gitlab.ts",
+      linear: "src/providers/linear.ts",
+      jira: "src/providers/jira.ts",
+      plane: "src/providers/plane.ts",
     },
   }),
 );

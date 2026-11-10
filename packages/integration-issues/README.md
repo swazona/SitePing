@@ -4,7 +4,7 @@
 
 # @siteping/integration-issues
 
-One GitHub or GitLab issue per [SitePing](https://github.com/NeosiaNexus/SitePing) feedback, opened, closed and reopened along with it through `@siteping/server` lifecycle hooks. No database column: the issue's first line links it to its feedback. Any other tracker plugs in through the `IssueTracker` interface.
+One GitHub, GitLab, Linear, Jira or Plane issue per [SitePing](https://github.com/NeosiaNexus/SitePing) feedback, opened, closed and reopened along with it through `@siteping/server` lifecycle hooks, and webhook handlers that sync an issue closed or reopened on the tracker back to its feedback. No database column: the issue's first line links it to its feedback. Any other tracker plugs in through the `IssueTracker` interface.
 
 **[Documentation](https://siteping.dev/docs/issue-trackers)**
 
@@ -22,7 +22,8 @@ Node ≥ 22, or any runtime with the Fetch API. It plugs into `@siteping/server`
 import { createSitepingHandler } from "@siteping/server";
 import { createIssueTrackerHooks } from "@siteping/integration-issues";
 import { createGitHubTracker } from "@siteping/integration-issues/github";
-// or: import { createGitLabTracker } from "@siteping/integration-issues/gitlab";
+// or: createGitLabTracker from "/gitlab", createLinearTracker from "/linear",
+//     createJiraTracker from "/jira", createPlaneTracker from "/plane"
 
 export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({
   store,
@@ -36,7 +37,7 @@ export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({
 
 ## Documentation
 
-Token permissions, the status mapping, what an issue contains, failure handling and custom trackers: **[siteping.dev/docs/issue-trackers](https://siteping.dev/docs/issue-trackers)**.
+Token permissions, the status mapping, two-way sync webhooks, what an issue contains, failure handling and custom trackers: **[siteping.dev/docs/issue-trackers](https://siteping.dev/docs/issue-trackers)**.
 
 ## License
 

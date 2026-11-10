@@ -25,3 +25,9 @@ export const GITHUB_STATE_REASON = {
   notPlanned: "not_planned",
   reopened: "reopened",
 } as const satisfies Record<string, string>;
+
+/** Header carrying the HMAC-SHA256 of a webhook delivery's raw body, as `sha256=<hex>`. */
+export const GITHUB_SIGNATURE_HEADER = "x-hub-signature-256";
+
+/** Header naming a delivery's event; only `issues` deliveries close or reopen issues. */
+export const GITHUB_EVENT_HEADER = "x-github-event";
