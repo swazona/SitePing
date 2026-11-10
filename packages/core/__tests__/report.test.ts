@@ -298,7 +298,11 @@ describe("redaction", () => {
   const secrets = [
     ["a bearer token", "Authorization: Bearer abcdefghijklmnop", "abcdefghijklmnop"],
     ["a JWT", "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N", "eyJhbGciOiJIUzI1NiJ9"],
-    ["a Stripe key", `key ${["sk", "live", "4eC39HqLyjWDarjtT1zdp7dc"].join("_")}`, ["sk", "live", "4eC39HqLyjWDarjtT1zdp7dc"].join("_")],
+    [
+      "a Stripe key",
+      `key ${["sk", "live", "4eC39HqLyjWDarjtT1zdp7dc"].join("_")}`,
+      ["sk", "live", "4eC39HqLyjWDarjtT1zdp7dc"].join("_"),
+    ],
     ["an Anthropic key", "sk-ant-api03-abcdefghijklmnopqrstuv", "sk-ant-api03-abcdefghijklmnopqrstuv"],
     ["a GitHub token", "ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"],
     ["an AWS key id", "AKIAIOSFODNN7EXAMPLE leaked", "AKIAIOSFODNN7EXAMPLE"],
