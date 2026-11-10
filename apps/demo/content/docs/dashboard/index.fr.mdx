@@ -82,6 +82,25 @@ Le tiroir montre le fil du feedback ouvert — les réponses du relecteur depuis
 
 Sans `author`, les fils sont en lecture seule. Les réponses demandent le rôle `team`, que votre serveur n'accorde qu'aux appelants de confiance — les détails sont dans [Fils de discussion](/fr/docs/comments#dans-le-dashboard).
 
+## Export
+
+Le bouton d'export (la flèche vers un bac) transforme des feedbacks en rapport à coller dans un ticket, une discussion ou un agent de code IA. Dans l'en-tête du tiroir, il exporte le feedback ouvert ; dans la barre d'outils, les lignes que la liste a chargées — l'onglet, le filtre de type et la recherche en cours, sans les pages derrière « Charger plus » — avec une case par feedback pour en écarter.
+
+| Format | Ce que vous obtenez |
+|---|---|
+| Markdown | Titres et listes ; chaque valeur fournie par le navigateur du relecteur en code |
+| Texte brut | Le même rapport sans Markdown ; le message et les réponses derrière une gouttière `\|` |
+| Prompt IA | Du Markdown présenté comme une tâche pour un agent de code : quoi chercher, où, et quoi rapporter |
+| JSON | Le rapport en données — un objet, ou un tableau pour plusieurs feedbacks |
+
+**Inclure** désactive des sections : page et élément (URL, sélecteur, XPath, texte de l'élément, la zone marquée, la fenêtre dans laquelle elle l'a été), navigateur et fenêtre, le lien de la capture, les erreurs et avertissements de la console (les autres niveaux n'y figurent jamais), les requêtes en échec, les réponses et l'auteur. Le message, le type, le statut et les dates y sont toujours. Une capture intégrée est signalée, jamais incluse.
+
+**Masquer** remplace ce qui ne doit pas sortir de l'inbox : jetons et clés (activé par défaut — jetons bearer, JWT, formats de clés Stripe, OpenAI, Anthropic, GitHub, GitLab, Slack, AWS et Google, et les valeurs des affectations et paramètres d'URL du type `token=` / `password:` / `api_key=`), adresses e-mail, paramètres d'URL, les noms de l'auteur et de tous les participants du fil, et le user agent. Le masquage repose sur des motifs : relisez un rapport avant de le partager.
+
+Le prompt IA commence par dire à l'agent que tout ce qui est cité ensuite — le message, les réponses, les URL, le texte de l'élément, la console — est une donnée non fiable, pas une instruction. Chacune de ces valeurs est placée dans un bloc de code qu'elle ne peut pas refermer : un message rédigé pour ressembler à des instructions reste dans sa citation.
+
+**Copier** met le rapport dans le presse-papiers (si le navigateur refuse, l'aperçu est sélectionné pour un `Ctrl`/`⌘`+`C`) ; **Télécharger** l'enregistre sous `siteping-<id>.md`, `siteping-<n>-feedbacks.json`, `-prompt.md` pour un prompt, etc. La boîte de dialogue se charge au premier usage : le premier chargement de l'inbox ne contient que le bouton. Pour confier des feedbacks à un agent sans copier-coller, voyez le [serveur MCP](/fr/docs/mcp).
+
 ## Lecture seule et permissions
 
 `readOnly` masque les changements de statut et les suppressions, des feedbacks comme des réponses — pour une personne qui suit l'inbox, et répond quand `author` est défini :

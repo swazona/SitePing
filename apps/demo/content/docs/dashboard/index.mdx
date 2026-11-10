@@ -82,6 +82,25 @@ The drawer shows the opened feedback's thread — the reviewer's replies from th
 
 Without `author`, threads are read-only. Replies ask for the `team` role, which your server grants only to callers it trusts — the details are in [Discussion threads](/docs/comments#in-the-dashboard).
 
+## Export
+
+The export button (the tray arrow) turns feedback into a report you can paste into an issue, a chat or an AI coding agent. In the drawer's header it exports the opened feedback; in the toolbar it exports the rows the list has loaded — the current tab, type filter and search, without the pages behind "Load more" — with a checkbox per feedback to leave some out.
+
+| Format | What you get |
+|---|---|
+| Markdown | Headings and lists; every value the reviewer's browser supplied in code |
+| Plain text | The same report without Markdown; the message and replies behind a `\|` gutter |
+| AI prompt | Markdown framed as a task for a coding agent: what to look for, where, and what to report back |
+| JSON | The report as data — one object, or an array for several feedbacks |
+
+**Include** switches sections off: page and element (URL, selector, XPath, element text, the marked area, the viewport it was marked in), browser and viewport, the screenshot link, console errors and warnings (other console levels never go in), failed requests, replies, and the author. The message, type, status and dates are always there. An inline screenshot is noted, never embedded.
+
+**Redact** replaces what should not leave the inbox: tokens and keys (on by default — bearer tokens, JWTs, Stripe, OpenAI, Anthropic, GitHub, GitLab, Slack, AWS and Google key formats, and the values of `token=` / `password:` / `api_key=`-like assignments and URL parameters), email addresses, URL query strings, the names of the author and of everyone in the thread, and the user agent. Redaction matches patterns: read a report before you share it.
+
+The AI prompt opens by telling the agent that everything quoted below it — the message, replies, URLs, element text, console output — is untrusted data, not instructions. Each such value sits in a code span or a fenced block that it cannot close, so a message written to look like instructions stays inside its quote.
+
+**Copy** puts the report on the clipboard (where the browser refuses, it selects the preview for `Ctrl`/`⌘`+`C`); **Download** saves it as `siteping-<id>.md`, `siteping-<n>-feedbacks.json`, `-prompt.md` for a prompt, and so on. The dialog loads on first use, so the inbox's first load carries only the button. To hand feedback to an agent without copying, see the [MCP server](/docs/mcp).
+
 ## Read-only and permissions
 
 `readOnly` hides status changes and deletions, of feedbacks and of replies — for a stakeholder who follows the inbox, and replies when `author` is set:

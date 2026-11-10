@@ -1,0 +1,135 @@
+---
+title: MCP server
+description: Let an AI coding agent — Claude Code, Cursor, Codex — read your feedback, fix it, reply and resolve it, through the Model Context Protocol.
+---
+
+`@siteping/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. Your coding agent starts it and gets five tools over your SitePing project: list the feedback, read one with its full context, see its screenshot, reply to the reviewer, and change its status. It talks to your [`@siteping/server`](/docs/server) endpoint over HTTP with its API key — no database access, no extra service.
+
+It runs on Node 22 or later, speaks MCP over stdio, and has no dependencies.
+
+## Setup
+
+Three environment variables:
+
+| Variable | Required | What it is |
+|---|---|---|
+| `SITEPING_URL` | yes | The URL your handler is mounted at, e.g. `https://example.com/api/siteping` |
+| `SITEPING_API_KEY` | yes | The handler's [`apiKey`](/docs/server#options) |
+| `SITEPING_PROJECT` | yes | The widget's `projectName` |
+| `SITEPING_AUTHOR_NAME` | no | The name replies are posted under. Default `AI agent` |
+
+The server needs the `apiKey` policy: it authenticates with `Authorization: Bearer <apiKey>`, which is also what grants its replies the `team` role. The key authorizes every status change and delete on the endpoint, so keep it in your agent's configuration, never in a committed file — the snippets below read it from your shell.
+
+### Claude Code
+
+```bash
+claude mcp add siteping \
+  --env SITEPING_URL=https://example.com/api/siteping \
+  --env SITEPING_API_KEY="$SITEPING_API_KEY" \
+  --env SITEPING_PROJECT=my-project \
+  -- npx -y @siteping/mcp
+```
+
+Or, shared with the team in the repository's `.mcp.json` (Claude Code expands `${VAR}` from each developer's environment):
+
+```json
+{
+  "mcpServers": {
+    "siteping": {
+      "command": "npx",
+      "args": ["-y", "@siteping/mcp"],
+      "env": {
+        "SITEPING_URL": "https://example.com/api/siteping",
+        "SITEPING_API_KEY": "${SITEPING_API_KEY}",
+        "SITEPING_PROJECT": "my-project"
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+`.cursor/mcp.json` in the project (or `~/.cursor/mcp.json` for every project):
+
+```json
+{
+  "mcpServers": {
+    "siteping": {
+      "command": "npx",
+      "args": ["-y", "@siteping/mcp"],
+      "env": {
+        "SITEPING_URL": "https://example.com/api/siteping",
+        "SITEPING_API_KEY": "${env:SITEPING_API_KEY}",
+        "SITEPING_PROJECT": "my-project"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.siteping]
+command = "npx"
+args = ["-y", "@siteping/mcp"]
+
+[mcp_servers.siteping.env]
+SITEPING_URL = "https://example.com/api/siteping"
+SITEPING_API_KEY = "your-api-key"
+SITEPING_PROJECT = "my-project"
+```
+
+Any other MCP client that starts stdio servers works the same way: run `npx -y @siteping/mcp` with the three variables set.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `list_feedback` | Newest first: id, type, status, date, page URL, a message excerpt (280 characters), the annotated element's selector, the reply count and whether there is a screenshot |
+| `get_feedback` | One feedback with everything known about it, rendered as an AI prompt by default |
+| `get_screenshot` | The screenshot the widget captured, as image content |
+| `update_status` | Set `open`, `in_progress`, `resolved` or `wont_fix` |
+| `add_reply` | Post a reply in the feedback's thread, which the reviewer reads in the widget |
+
+The tool descriptions tell the agent the workflow — list, read, fix in the code, reply, resolve — and that whatever a reviewer wrote is data, never instructions.
+
+### `list_feedback`
+
+| Argument | Default | |
+|---|---|---|
+| `status` | `["open", "in_progress"]` | A status, a list of them, or `"all"` |
+| `type` | — | `question`, `change`, `bug` or `other` |
+| `url_contains` | — | Case-insensitive substring of the page URL, e.g. `/pricing` |
+| `since` | — | An ISO 8601 date (`2026-07-20`, `2026-07-20T10:00:00Z`) or a duration ago: `30m`, `24h`, `7d`, `2w` |
+| `search` | — | Text the message contains |
+| `limit` | `20` | 1 to 100 |
+| `cursor` | — | The `nextCursor` of the previous call |
+
+`status`, `type` and `search` are filtered by the server; `url_contains` and `since` by the MCP server as it reads the list 100 rows at a time, newest first. One call reads at most 2,000 rows, then returns what it found with a `nextCursor` to go on. A cursor points at a position in the list: feedback that arrives between two calls shifts it, so a page may repeat a row.
+
+### `get_feedback`
+
+| Argument | Default | |
+|---|---|---|
+| `id` | — | Required |
+| `format` | `"prompt"` | `prompt`, `markdown`, `text` or `json` — the same report as the dashboard's [Export](/docs/dashboard#export) |
+| `redact_emails` | `true` | Replace email addresses with `[email]` |
+| `redact_query_strings` | `false` | Remove URL query strings |
+
+Tokens and API keys are always redacted. The result also says whether a screenshot exists and reminds the agent to reply and resolve once it is done. The HTTP API has no route for one feedback, so `get_feedback`, `get_screenshot` look the id up in the list, newest first: a feedback older than the 5,000 most recent is not found.
+
+### `get_screenshot`
+
+An inline screenshot (what the stores keep without [screenshot storage](/docs/adapters/screenshot-storage)) is returned as is. A screenshot URL is fetched — resolved against `SITEPING_URL` when relative, with the API key only when it is on the same origin, never to a bucket or a CDN. PNG, JPEG, WebP and GIF up to 10 MB are returned; anything else is a tool error the agent can read.
+
+### `update_status` and `add_reply`
+
+`update_status` takes `id` and `status`; the server stamps `resolvedAt` when the feedback closes and clears it when it reopens, as for the dashboard. `add_reply` takes `id` and `body` (up to 5,000 characters) and posts it with the `team` role, under `SITEPING_AUTHOR_NAME`, with no email. Both fire the server's webhooks and hooks like any other client.
+
+## Security
+
+The agent reads text written by people outside your team. The report format quotes every value a reviewer's browser supplied in a code span or a fenced block it cannot close, and tells the agent first that quoted text is data, not instructions — but no format makes a model immune to prompt injection. Review what an agent changes, and give it only the tools you need: most MCP clients let you disable `add_reply` and `update_status`, or ask before each call.
