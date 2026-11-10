@@ -114,6 +114,8 @@ Rate limiting is not handled here: apply it in your framework or reverse proxy, 
 | `access` | `SitepingAccessControl` | — | Your own authentication instead of the four options above — see [custom access](#custom-access) |
 | `allowedOrigins` | `string[]` | — | Exact-match CORS allowlist. **No wildcard support** — `["*"]` matches nothing; unset means no CORS headers at all. Listed origins may send `Content-Type`, `Authorization`, and any custom header their preflight asks for (e.g. from the widget's `headers` option) |
 | `maxBodyBytes` | `number` | 4 MiB | Largest request body, in bytes — twice the largest submission the validation accepts. A longer one answers `413` before any of it is parsed |
+| `recordingStorage` | `RecordingStorage` | — | Where [screen recordings](/docs/widget/recording) go. With it, list responses advertise `capabilities.recordings` and the endpoint takes recording uploads; without it, the widget never offers "Record screen" |
+| `maxRecordingBytes` | `number` | 16 MiB | Largest recording upload, in bytes. A longer one answers `413` before it is stored |
 | `webhooks` | `WebhookConfig \| WebhookConfig[]` | — | Fire on each new feedback, and on the [events](#events) each one opts into — see [webhooks](#webhooks) |
 | `waitUntil` | `(promise) => void` | — | Keeps webhook deliveries alive after the response on serverless and edge runtimes — see [webhooks](#webhooks) |
 | `beforeCreate` | `(input, context) => input` | — | Rewrite a submission before it is stored — see [extension points](#extension-points) |
@@ -143,7 +145,7 @@ createSitepingHandler({
 | `code` | Thrown when |
 |---|---|
 | `CONFIG_STORE_MISSING` | No `store` — with adapter-prisma, neither `store` nor `prisma` |
-| `CONFIG_MAX_BODY_BYTES_INVALID` | `maxBodyBytes` is not a positive integer |
+| `CONFIG_MAX_BODY_BYTES_INVALID` | `maxBodyBytes` or `maxRecordingBytes` is not a positive integer |
 | `CONFIG_OWNERSHIP_CHECK_MISSING` | `access.authorize` over a store without `verifyProjectOwnership` |
 | `CONFIG_WEBHOOK_TIMEOUT_INVALID` | A webhook `timeoutMs` no timer holds (the message names the webhook by its origin only) |
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` without `apiKey`, `access` or `requireAuthForDestructive: false` |
@@ -580,6 +582,7 @@ One endpoint, five methods. All bodies are JSON.
 | Method | Purpose | Success |
 |---|---|---|
 | `POST` | Create feedback (widget submissions) — or [a comment](/docs/comments#post-a-comment), when the body has a `feedbackId` | `201` + record. A replayed `clientId` returns the existing record instead of failing (and never notifies webhooks or `onCreated` twice); a `clientId` already used by **another** project is refused with `409` |
+| `POST` with a video body | Upload a [screen recording](/docs/widget/recording#how-a-recording-reaches-storage) (`Content-Type: video/webm` or `video/mp4`, `?projectName=…&clientId=…`), under the same access rule as a create. Only with a `recordingStorage`: otherwise `415` | `201` + `{ url }` |
 | `GET` | List feedbacks, each with its thread and [`permissions`](#what-each-requester-may-do) | `200` + `{ feedbacks, total, protocol, capabilities, permissions }`, with `Cache-Control: private, max-age=5` (`no-store` under `access`) |
 | `PATCH` | Change a status | `200` + updated record |
 | `DELETE` | Delete one or all — or [a comment](/docs/comments#delete-a-comment), when the body has a `commentId` | `200` + `{ deleted: true }` |
@@ -613,7 +616,7 @@ What 1.x keeps stable:
 
 ### Validation limits worth knowing
 
-The whole body ≤ `maxBodyBytes` (4 MiB) · `message` ≤ 5000 chars · `annotations` ≤ 50 per feedback · comment `body` ≤ 5000 chars, 100 `client` comments per thread (`team` replies are not capped) · `screenshotDataUrl` ≤ 1.5 MB, JPEG/PNG/WebP only · `diagnostics` ≤ 50 console + 20 network entries · `projectName` ≤ 191 chars · `clientId` ≤ 191 chars and matches `[a-zA-Z0-9_-]+` · `authorEmail` matches the same Unicode-aware pattern as the widget's identity modal (`françois@exemple.fr` is fine), so an address the modal accepts is never rejected here.
+The whole body ≤ `maxBodyBytes` (4 MiB) · `message` ≤ 5000 chars · `annotations` ≤ 50 per feedback · comment `body` ≤ 5000 chars, 100 `client` comments per thread (`team` replies are not capped) · `screenshotDataUrl` ≤ 1.5 MB, JPEG/PNG/WebP only · `diagnostics` ≤ 50 console + 20 network entries and 30 component names (≤ 200 chars each); a `diagnostics.recording` is kept only when `recordingStorage.isOwnUrl` recognises its URL · a recording upload ≤ `maxRecordingBytes` (16 MiB), WebM or MP4 by its first bytes, whatever `Content-Type` says · `projectName` ≤ 191 chars · `clientId` ≤ 191 chars and matches `[a-zA-Z0-9_-]+` · `authorEmail` matches the same Unicode-aware pattern as the widget's identity modal (`françois@exemple.fr` is fine), so an address the modal accepts is never rejected here.
 
 ## Webhooks
 

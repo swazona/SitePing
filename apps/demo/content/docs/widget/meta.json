@@ -1,4 +1,14 @@
 {
   "title": "Widget",
-  "pages": ["index", "configuration", "script-tag", "screenshots", "right-click", "panel-actions", "i18n", "anchoring"]
+  "pages": [
+    "index",
+    "configuration",
+    "script-tag",
+    "screenshots",
+    "recording",
+    "right-click",
+    "panel-actions",
+    "i18n",
+    "anchoring"
+  ]
 }

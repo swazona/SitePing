@@ -20,6 +20,18 @@ initSiteping({
 - A `screenshotRegion` — the annotation's position inside the image as fractions — travels with it, so dashboards can re-draw the rectangle on top of the screenshot.
 - Captured **once** per submission and reused across retries.
 
+## Mark up before sending
+
+With screenshots on, the feedback form offers **Mark up screenshot** (turn it off with `screenshotEditor: false`). It captures the area — the capture the send would take anyway — and opens it in an editor over the page:
+
+- **Pen**, **Arrow** and **Highlight** draw in the widget's accent colour;
+- **Redact** pixelates a rectangle into blocks coarse enough that no text survives. It is drawn into the image's own pixels: the JPEG sent holds the blocks, not the original under a layer a reviewer could remove;
+- **Undo** (or Ctrl/⌘+Z) takes back the last shape; **Done** keeps the result, **Cancel** (or Escape) the original.
+
+The edited image replaces the capture in the feedback, same size, so its `screenshotRegion` still frames the annotation. Mouse, pen and touch all draw. With the keyboard, focus the image, move a crosshair with the arrow keys (Shift for bigger steps) and press Enter or Space to start a shape and again to end it; Escape drops a shape in progress, then closes the editor. The toolbar is a dialog of its own with its focus kept inside it, and it follows the page's `dir`.
+
+The editor's code is a separate chunk (about 3 kB gzipped), loaded the first time it opens.
+
 ## Privacy masking
 
 Add `data-siteping-ignore="true"` to any element that must never appear in a screenshot. The element and all its descendants are removed from the render:

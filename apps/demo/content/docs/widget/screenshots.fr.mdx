@@ -20,6 +20,18 @@ initSiteping({
 - Une `screenshotRegion` — la position de l'annotation dans l'image, exprimée en fractions — voyage avec elle, pour que les dashboards puissent redessiner le rectangle par-dessus la capture.
 - Capturée **une seule fois** par envoi, et réutilisée à chaque réessai.
 
+## Annoter avant l'envoi
+
+Quand les captures sont activées, le formulaire propose **Annoter la capture** (désactivable avec `screenshotEditor: false`). Le widget capture la zone — la capture que l'envoi aurait prise de toute façon — et l'ouvre dans un éditeur au-dessus de la page :
+
+- **Crayon**, **Flèche** et **Surligner** dessinent dans la couleur d'accent du widget ;
+- **Masquer** pixelise un rectangle en blocs assez gros pour qu'aucun texte ne reste lisible. Il est dessiné dans les pixels mêmes de l'image : le JPEG envoyé contient les blocs, pas l'original sous un calque qu'on pourrait retirer ;
+- **Annuler le dernier** (ou Ctrl/⌘+Z) retire la dernière forme ; **Terminé** garde le résultat, **Annuler** (ou Échap) l'original.
+
+L'image annotée remplace la capture dans le feedback, aux mêmes dimensions : son `screenshotRegion` cadre toujours l'annotation. Souris, stylet et doigt dessinent tous. Au clavier, donnez le focus à l'image, déplacez la mire avec les flèches (Maj pour de grands pas) et appuyez sur Entrée ou Espace pour commencer une forme, puis à nouveau pour la terminer ; Échap abandonne une forme en cours, puis ferme l'éditeur. La barre d'outils est un dialogue à part entière qui garde le focus, et suit le `dir` de la page.
+
+Le code de l'éditeur est un chunk séparé (environ 3 kB gzippé), chargé à sa première ouverture.
+
 ## Masquer les données sensibles
 
 Ajoutez `data-siteping-ignore="true"` à tout élément qui ne doit jamais apparaître dans une capture. L'élément et tous ses descendants sont retirés du rendu :
