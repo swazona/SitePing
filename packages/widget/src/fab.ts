@@ -3,7 +3,16 @@ import { parseSvg, setInert, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import { registerEscapeLayer } from "./host-isolation.js";
 import { type TFunction, type Translations, tWithParams } from "./i18n/index.js";
-import { ICON_CLOSE, ICON_EDIT, ICON_EYE, ICON_EYE_OFF, ICON_FLOW, ICON_LIST, ICON_RECORD, ICON_SITEPING } from "./icons.js";
+import {
+  ICON_CLOSE,
+  ICON_EDIT,
+  ICON_EYE,
+  ICON_EYE_OFF,
+  ICON_FLOW,
+  ICON_LIST,
+  ICON_RECORD,
+  ICON_SITEPING,
+} from "./icons.js";
 import { isCoarsePointer } from "./viewport.js";
 
 /** Closed set of radial menu item ids — keeps the label lookup exhaustive. */
@@ -184,7 +193,9 @@ export class Fab {
   /** Number the items in menu order (`--sp-i` staggers their animation). */
   private indexItems(): void {
     const buttons = this.radialContainer.querySelectorAll<HTMLButtonElement>(".sp-radial-item");
-    buttons.forEach((btn, i) => btn.style.setProperty("--sp-i", String(i)));
+    buttons.forEach((btn, i) => {
+      btn.style.setProperty("--sp-i", String(i));
+    });
   }
 
   /**

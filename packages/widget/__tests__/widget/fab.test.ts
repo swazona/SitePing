@@ -900,6 +900,25 @@ describe("Fab flow item", () => {
     expect(shadow.querySelector(".sp-fab")!.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("sits after 'Record screen' when both are offered, in either order, numbered in menu order", () => {
+    fab.setFlowAvailable();
+    fab.setRecordAvailable(true);
+    expect(ids()).toEqual(["chat", "annotate", "record", "flow", "toggle-annotations"]);
+    expect(getRadialItems(shadow).map((btn) => btn.style.getPropertyValue("--sp-i"))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+
+    fab.setRecordAvailable(false);
+    expect(ids()).toEqual(["chat", "annotate", "flow", "toggle-annotations"]);
+    expect(getRadialItems(shadow).map((btn) => btn.style.getPropertyValue("--sp-i"))).toEqual(["0", "1", "2", "3"]);
+    fab.setRecordAvailable(true);
+    expect(ids()).toEqual(["chat", "annotate", "record", "flow", "toggle-annotations"]);
+  });
+
   it("reads 'Finish the flow' while one is active", () => {
     fab.setFlowAvailable();
     fab.setFlowActive(true);

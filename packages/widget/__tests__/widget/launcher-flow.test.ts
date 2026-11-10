@@ -32,6 +32,7 @@ vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
   flushRetryQueue: vi.fn().mockResolvedValue(undefined),
   // StoreClient's bound on a store write (store-mode tests)
   withTimeout: (promise: Promise<unknown>) => promise,
+  preloadOfflineQueue: vi.fn(),
 }));
 
 // Capture the EventBus instance that launch() creates so we can emit events on it.

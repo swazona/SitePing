@@ -8,6 +8,7 @@ Runtime exports (ESM and CJS):
 
 - `SITEPING_PROTOCOL_VERSION: number`
 - `WEBHOOK_EVENTS: object`
+- `createMemoryRateLimitStore: function`
 - `createSitepingHandler: function`
 - `dispatchWebhook: function`
 - `dispatchWebhooks: function`
@@ -80,6 +81,9 @@ export interface FeedbackCreateInput {
     authorName: string;
     clientId: string;
     diagnostics?: DiagnosticsSnapshot | null | undefined;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     message: string;
     projectName: string;
     screenshotDataUrl?: null | string | undefined;
@@ -119,6 +123,9 @@ export interface FeedbackRecord {
     comments?: CommentRecord[] | undefined;
     createdAt: Date;
     diagnostics: DiagnosticsSnapshot | null;
+    flowId?: null | string | undefined;
+    flowStep?: null | number | undefined;
+    flowTitle?: null | string | undefined;
     id: string;
     message: string;
     projectName: string;
@@ -167,6 +174,7 @@ export type GenericWebhookPayload = Prettify<Serialized<Omit<FeedbackRecord, "cl
 }>;
 
 export interface GetQueryInput {
+    flowId?: string | undefined;
     limit: number;
     page: number;
     projectName: string;
@@ -196,7 +204,7 @@ export interface RecordingStorage {
     }>;
 }
 
-export const SITEPING_PROTOCOL_VERSION = 1;
+export const SITEPING_PROTOCOL_VERSION = 2;
 
 export interface ScreenshotRegion {
     hPct: number;
@@ -244,7 +252,7 @@ export interface SitepingCapabilities {
     recordings?: boolean | undefined;
 }
 
-export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
+export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_RATE_LIMIT_INVALID" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
 
 export interface SitepingCreatedComment extends CommentRecord {
     projectName: string;
@@ -276,7 +284,9 @@ export interface SitepingHandlerBaseOptions<Principal> {
     logger?: SitepingLogger | undefined;
     maxBodyBytes?: number | undefined;
     maxRecordingBytes?: number | undefined;
+    notifyReporter?(feedback: FeedbackRecord, event: SitepingReporterEvent, context: SitepingRequestContext<Principal>): Promise<void> | void;
     presentFeedback?(feedback: FeedbackRecord, context: SitepingRequestContext<Principal>): FeedbackRecord;
+    rateLimit?: SitepingRateLimitOptions | undefined;
     recordingStorage?: RecordingStorage | undefined;
     store: SitepingStore;
     waitUntil?: ((promise: Promise<unknown>) => void) | undefined;
@@ -307,6 +317,38 @@ export interface SitepingProjectContext {
     request: Request;
 }
 
+export type SitepingRateLimitBucket = "create" | "other";
+
+export interface SitepingRateLimitOptions {
+    create?: SitepingRateLimitRule | undefined;
+    ipHeader?: string | undefined;
+    key?: ((request: Request, bucket: SitepingRateLimitBucket) => Promise<null | string | undefined> | null | string | undefined) | undefined;
+    other?: SitepingRateLimitRule | undefined;
+    store?: SitepingRateLimitStore | undefined;
+}
+
+export interface SitepingRateLimitRule {
+    algorithm?: "fixed" | "sliding" | undefined;
+    limit: number;
+    windowMs: number;
+}
+
+export interface SitepingRateLimitStore {
+    get(key: string): Promise<number> | number;
+    increment(key: string, ttlMs: number): Promise<number> | number;
+}
+
+export type SitepingReporterEvent = {
+    comment: SitepingCreatedComment;
+    type: "replied";
+} | {
+    status: ClosedFeedbackStatus;
+    type: "resolved";
+} | {
+    status: OpenFeedbackStatus;
+    type: "reopened";
+};
+
 export interface SitepingRequestContext<Principal> {
     principal: Principal;
     request: Request;
@@ -321,6 +363,7 @@ export interface SitepingStore {
     deleteComment?(feedbackId: string, commentId: string): Promise<void>;
     deleteFeedback(id: string): Promise<void>;
     findByClientId(clientId: string): Promise<FeedbackRecord | null>;
+    getFeedback?(id: string): Promise<FeedbackRecord | null>;
     getFeedbacks(query: FeedbackQuery): Promise<FeedbackPage>;
     updateFeedback(id: string, data: FeedbackUpdateInput): Promise<FeedbackRecord>;
     verifyProjectOwnership(id: string, projectName: string): Promise<boolean>;
@@ -366,6 +409,8 @@ export interface WebhookPayloadMap {
 }
 
 export type WebhookType = "discord" | "generic" | "slack";
+
+export function createMemoryRateLimitStore(): SitepingRateLimitStore;
 
 export function createSitepingHandler<Principal extends SitepingPrincipal>(options: SitepingAccessHandlerOptions<Principal>): SitepingHandler;
 
@@ -498,6 +543,7 @@ interface FeedbackPage {
 }
 
 interface FeedbackQuery {
+    flowId?: string | undefined;
     limit?: number | undefined;
     page?: number | undefined;
     projectName: string;

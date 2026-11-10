@@ -220,7 +220,9 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     OPTIONS: (request: Request): Response => preflightResponse(request, allowedOrigins),
     // A video body is a recording upload; anything else, a JSON feedback or
     // comment. Both count against the `create` rate-limit bucket.
-    POST: limit("POST", (request: Request) => (isRecordingUpload(request) ? uploadRecording(request) : postJson(request))),
+    POST: limit("POST", (request: Request) =>
+      isRecordingUpload(request) ? uploadRecording(request) : postJson(request),
+    ),
     GET: limit("GET", listFeedbacksOperation({ store, pipeline, recordings: recordingStorage !== undefined })),
     PATCH: limit(
       "PATCH",
