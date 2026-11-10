@@ -1,0 +1,114 @@
+{
+  "name": "@siteping/integration-notify",
+  "version": "0.0.0",
+  "description": "Team notifications for Siteping — new feedback, status changes and replies posted to Slack, Telegram, WhatsApp, email or a signed webhook through @siteping/server's notifyTeam, with one channel contract for any other outlet",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./slack": {
+      "import": {
+        "types": "./dist/slack.d.ts",
+        "default": "./dist/slack.js"
+      },
+      "require": {
+        "types": "./dist/slack.d.cts",
+        "default": "./dist/slack.cjs"
+      }
+    },
+    "./telegram": {
+      "import": {
+        "types": "./dist/telegram.d.ts",
+        "default": "./dist/telegram.js"
+      },
+      "require": {
+        "types": "./dist/telegram.d.cts",
+        "default": "./dist/telegram.cjs"
+      }
+    },
+    "./whatsapp": {
+      "import": {
+        "types": "./dist/whatsapp.d.ts",
+        "default": "./dist/whatsapp.js"
+      },
+      "require": {
+        "types": "./dist/whatsapp.d.cts",
+        "default": "./dist/whatsapp.cjs"
+      }
+    },
+    "./email": {
+      "import": {
+        "types": "./dist/email-channel.d.ts",
+        "default": "./dist/email-channel.js"
+      },
+      "require": {
+        "types": "./dist/email-channel.d.cts",
+        "default": "./dist/email-channel.cjs"
+      }
+    },
+    "./webhook": {
+      "import": {
+        "types": "./dist/webhook.d.ts",
+        "default": "./dist/webhook.js"
+      },
+      "require": {
+        "types": "./dist/webhook.d.cts",
+        "default": "./dist/webhook.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node ../../scripts/fix-dts.mjs dist",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "siteping",
+    "notifications",
+    "slack",
+    "telegram",
+    "whatsapp",
+    "email",
+    "webhook",
+    "integration",
+    "feedback",
+    "typescript"
+  ],
+  "author": "neosianexus",
+  "license": "MIT",
+  "homepage": "https://siteping.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NeosiaNexus/SitePing.git",
+    "directory": "packages/integration-notify"
+  },
+  "bugs": {
+    "url": "https://github.com/NeosiaNexus/SitePing/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@siteping/adapter-memory": "workspace:*",
+    "@siteping/core": "workspace:*",
+    "@siteping/server": "workspace:*"
+  }
+}

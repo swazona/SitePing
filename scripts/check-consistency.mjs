@@ -18,8 +18,9 @@
 //   6. Node tooling (configs, scripts/, e2e/) takes a filesystem path from a
 //      file URL's .pathname instead of fileURLToPath();
 //   7. adapter-prisma's source imports @prisma/client, which it declares as
-//      an optional peer dependency, or integration-issues' source imports
-//      @siteping/server, which it does not declare at all;
+//      an optional peer dependency, or integration-issues' (or
+//      integration-notify's) source imports @siteping/server, which it does
+//      not declare at all;
 //   8. a published package depends on another through `workspace:` without
 //      the release.yml step that pins the range before `npm publish`, or
 //      its publish job does not wait for the dependency's;
@@ -260,10 +261,12 @@ for (const dir of toolingDirs) {
 //   out. The client shape is structural on purpose (SitepingPrismaClient).
 // - integration-issues declares no @siteping/server dependency, so one 0.x
 //   release installs next to any server: the hook types are restated, and a
-//   type test keeps them identical to the server's.
+//   type test keeps them identical to the server's. integration-notify does the
+//   same for `notifyTeam`.
 const STRUCTURAL_ONLY = [
   ["packages/adapter-prisma/src", "@prisma/client", "adapter-prisma declares it as an optional peer (#306)"],
   ["packages/integration-issues/src", "@siteping/server", "integration-issues mirrors the server's hook types"],
+  ["packages/integration-notify/src", "@siteping/server", "integration-notify mirrors the server's notifyTeam types"],
 ];
 const sourceFiles = (dir) =>
   readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) =>
