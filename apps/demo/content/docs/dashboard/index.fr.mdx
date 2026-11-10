@@ -57,7 +57,8 @@ Donnez le focus à la liste une fois, puis :
 | Touche | Action |
 |---|---|
 | `j` / `↓`, `k` / `↑` | Se déplacer entre les lignes |
-| `Entrée` ou `o` | Ouvrir le feedback ciblé ; un second `Entrée` sur un feedback ouvert l'ouvre sur la page en direct |
+| `Entrée` ou `o` | Ouvrir le feedback ciblé ; un second `Entrée` sur un feedback ouvert l'ouvre sur la page en direct. Sur la ligne d'un [parcours](#parcours-sur-plusieurs-pages) : afficher ou masquer ses étapes |
+| `→` / `←` | Afficher / masquer les étapes du parcours ciblé (`←` depuis une étape revient à la ligne de son parcours) |
 | `e` / `p` / `x` | Basculer résolu / en cours / sans suite (appuyer sur le statut courant le remet à ouvert) |
 | `u` | Annuler le dernier changement de statut |
 | `r` | Actualiser |
@@ -71,6 +72,14 @@ Les raccourcis exigent le focus à l'intérieur du composant (ils sont liés à 
 ## Statuts et actions
 
 Quatre statuts : `open`, `in_progress`, `resolved`, `wont_fix`. Le dashboard peut les définir tous (les actions du widget, elles, restent binaires : résoudre/rouvrir). Clore un feedback (`resolved` ou `wont_fix`) horodate `resolvedAt` ; le rouvrir l'efface. Les changements de statut sont optimistes avec annulation ; **la suppression est définitive** — elle passe par une confirmation en ligne et n'a pas d'annulation.
+
+## Parcours sur plusieurs pages
+
+Un [parcours](/fr/docs/widget/flows) — les commentaires d'un relecteur sur plusieurs pages — s'affiche sur une seule ligne : « Inscription · 3 étapes », avec ses auteurs, à l'heure de sa dernière étape, là où sa plus récente étape se placerait dans la liste. Cliquez-la, ou appuyez sur `Entrée`, pour afficher ses étapes juste en dessous, dans l'ordre, chacune avec son « Étape N » ; à nouveau pour les masquer.
+
+Chaque étape reste un feedback à part entière : ouvrez-la, changez son statut, répondez-lui ou supprimez-la comme les autres — résolvez le code de vérification en retard et gardez ouvert le mauvais nom d'accueil. La ligne d'un parcours compte donc les étapes de l'onglet et de la recherche en cours : une fois l'étape 2 résolue, l'onglet « Ouvert » affiche « Inscription · 2 étapes », et l'onglet « Résolu » montre l'autre. Un parcours sans titre s'affiche « Parcours sans titre ».
+
+Le regroupement est celui du composant : [`useSitepingInbox`](/fr/docs/dashboard/headless) garde `items` à plat, avec les `flowId`, `flowStep` et `flowTitle` de chaque enregistrement (depuis les serveurs qui parlent le [protocole 2](/fr/docs/server#parcours-sur-plusieurs-pages)) pour regrouper à votre façon.
 
 ## Fils de discussion
 
