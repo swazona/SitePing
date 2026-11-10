@@ -71,7 +71,7 @@ Monorepo with bun workspaces + Turborepo. Libraries live in `packages/`, the web
 | `@siteping/server` | published | Any | Store-agnostic HTTP handler on the Fetch API (auth, CORS, hooks, webhooks) |
 | `@siteping/adapter-prisma` | published | Node | Prisma database adapter — `@siteping/server`'s handler with a Prisma store built in |
 | `@siteping/adapter-drizzle` | published | Node | Drizzle ORM store (PostgreSQL, Turso/libSQL) |
-| `@siteping/integration-issues` | published | Any | Issue tracker hooks for the server: one GitHub or GitLab issue per feedback, or a custom `IssueTracker` |
+| `@siteping/integration-issues` | published | Any | Issue tracker hooks for the server: one GitHub, GitLab, Linear, Jira or Plane issue per feedback (with two-way sync webhooks), or a custom `IssueTracker` |
 | `@siteping/mcp` | published | Node | MCP stdio server over the HTTP API: AI coding agents list, read, answer and resolve feedback |
 | `@siteping/screenshot-storage` | published | Any (`/filesystem`: Node) | Screenshot storage for the stores: S3-compatible buckets, Cloudflare Images, a Drizzle table, filesystem, memory, or a custom `ScreenshotObjectStore` |
 | `@siteping/adapter-memory` | published | Any | In-memory adapter (testing, demos, serverless) |
