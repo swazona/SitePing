@@ -1,11 +1,12 @@
 import { MemoryStore } from "@siteping/adapter-memory";
 import type { FeedbackResponse, FeedbackResponseList, RecordingStorage } from "@siteping/core";
 import { describe, expect, it, vi } from "vitest";
-import { createSitepingHandler } from "../src/index.js";
+import { createSitepingHandler, isSitepingConfigError } from "../src/index.js";
 import { validPayloadNoAnnotations } from "./fixtures.js";
 
 const ENDPOINT = "http://localhost/api/siteping";
 const PROJECT = validPayloadNoAnnotations.projectName;
+const CLIENT_ID = validPayloadNoAnnotations.clientId;
 const BASE = "https://cdn.example.com/rec/";
 
 /** A WebM file's first bytes (EBML header), padded. */
@@ -23,12 +24,16 @@ function memoryRecordings() {
       stored.set(url, { bytes, ...ctx });
       return { url };
     },
-    isOwnUrl: (url) => stored.has(url),
+    // Owned for the project and the feedback it was uploaded for, only.
+    isOwnUrl: (url, owner) => {
+      const entry = stored.get(url);
+      return entry?.projectName === owner.projectName && entry.clientId === owner.clientId;
+    },
   };
   return { storage, stored };
 }
 
-function upload(body: Uint8Array, contentType = "video/webm", query = `projectName=${PROJECT}&clientId=cid-1`) {
+function upload(body: Uint8Array, contentType = "video/webm", query = `projectName=${PROJECT}&clientId=${CLIENT_ID}`) {
   return new Request(`${ENDPOINT}?${query}`, {
     method: "POST",
     headers: { "Content-Type": contentType },
@@ -71,7 +76,7 @@ describe("screen recordings", () => {
     const response = await handler.POST(upload(WEBM));
     expect(response.status).toBe(201);
     const { url } = (await response.json()) as { url: string };
-    expect(stored.get(url)).toMatchObject({ mimeType: "video/webm", projectName: PROJECT, clientId: "cid-1" });
+    expect(stored.get(url)).toMatchObject({ mimeType: "video/webm", projectName: PROJECT, clientId: CLIENT_ID });
     expect([...(stored.get(url)?.bytes ?? [])]).toEqual([...WEBM]);
 
     const mp4 = await handler.POST(upload(MP4, "video/mp4"));
@@ -120,6 +125,66 @@ describe("screen recordings", () => {
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ action: "create", projectName: PROJECT }));
   });
 
+  it("lets beforeRecordingUpload pin the project, before authorize and the storage see it", async () => {
+    const { storage, stored } = memoryRecordings();
+    const authorize = vi.fn(() => true);
+    const beforeRecordingUpload = vi.fn((input: { projectName: string; clientId: string }) => ({
+      ...input,
+      projectName: "alpha",
+    }));
+    const handler = createSitepingHandler({
+      store: new MemoryStore(),
+      recordingStorage: storage,
+      access: { authenticate: () => ({ id: "u" }), authorize },
+      beforeRecordingUpload,
+    });
+    const response = await handler.POST(upload(WEBM, "video/webm", `projectName=other&clientId=${CLIENT_ID}`));
+    expect(response.status).toBe(201);
+    const { url } = (await response.json()) as { url: string };
+    expect(beforeRecordingUpload).toHaveBeenCalledWith(
+      { projectName: "other", clientId: CLIENT_ID, mimeType: "video/webm", size: WEBM.byteLength },
+      expect.anything(),
+    );
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ action: "create", projectName: "alpha" }));
+    expect(stored.get(url)).toMatchObject({ projectName: "alpha", clientId: CLIENT_ID });
+  });
+
+  it("answers 500 and stores nothing when beforeRecordingUpload throws or returns no target", async () => {
+    const { storage, stored } = memoryRecordings();
+    const logger = { error: vi.fn() };
+    for (const beforeRecordingUpload of [
+      () => {
+        throw new Error("no session");
+      },
+      () => null as never,
+    ]) {
+      const handler = createSitepingHandler({
+        store: new MemoryStore(),
+        recordingStorage: storage,
+        beforeRecordingUpload,
+        logger,
+      });
+      expect((await handler.POST(upload(WEBM))).status).toBe(500);
+    }
+    expect(stored.size).toBe(0);
+  });
+
+  it("refuses to start with beforeCreate and a recordingStorage but no beforeRecordingUpload", () => {
+    let thrown: unknown;
+    try {
+      createSitepingHandler({
+        store: new MemoryStore(),
+        recordingStorage: memoryRecordings().storage,
+        beforeCreate: (input) => input,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isSitepingConfigError(thrown) && thrown.code).toBe("CONFIG_RECORDING_UPLOAD_HOOK_MISSING");
+    // Without recordings there is no upload to pin.
+    expect(() => createSitepingHandler({ store: new MemoryStore(), beforeCreate: (input) => input })).not.toThrow();
+  });
+
   it("keeps a feedback's recording only when the storage owns its URL", async () => {
     const { storage } = memoryRecordings();
     const handler = createSitepingHandler({ store: new MemoryStore(), recordingStorage: storage });
@@ -144,6 +209,58 @@ describe("screen recordings", () => {
       )
     ).json()) as FeedbackResponse;
     expect(foreign.diagnostics).toEqual({ console: [], network: [] });
+  });
+
+  it("drops a recording uploaded for another project or another feedback", async () => {
+    const { storage } = memoryRecordings();
+    const handler = createSitepingHandler({ store: new MemoryStore(), recordingStorage: storage });
+    const otherProject = (await (
+      await handler.POST(upload(WEBM, "video/webm", `projectName=other&clientId=${CLIENT_ID}`))
+    ).json()) as { url: string };
+    const otherFeedback = (await (
+      await handler.POST(upload(WEBM, "video/webm", `projectName=${PROJECT}&clientId=someone-else`))
+    ).json()) as { url: string };
+
+    const created = (await (
+      await handler.POST(create({ console: [], network: [], recording: recordingOf(otherProject.url) }))
+    ).json()) as FeedbackResponse;
+    expect(created.diagnostics).toEqual({ console: [], network: [] });
+
+    const second = (await (
+      await handler.POST(
+        new Request(ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...validPayloadNoAnnotations,
+            clientId: "uuid-777",
+            diagnostics: { console: [], network: [], recording: recordingOf(otherFeedback.url) },
+          }),
+        }),
+      )
+    ).json()) as FeedbackResponse;
+    expect(second.diagnostics).toEqual({ console: [], network: [] });
+  });
+
+  it("checks the recording against the project beforeCreate pins", async () => {
+    const { storage } = memoryRecordings();
+    const pin = { projectName: "alpha" };
+    const handler = createSitepingHandler({
+      store: new MemoryStore(),
+      recordingStorage: storage,
+      beforeCreate: (input) => ({ ...input, ...pin }),
+      beforeRecordingUpload: (input) => ({ ...input, ...pin }),
+    });
+    // Uploaded for "other" by the browser's claim, stored for "alpha" by the hook…
+    const { url } = (await (
+      await handler.POST(upload(WEBM, "video/webm", `projectName=other&clientId=${CLIENT_ID}`))
+    ).json()) as { url: string };
+    // …so the feedback, pinned to "alpha" too, keeps it.
+    const kept = (await (
+      await handler.POST(create({ console: [], network: [], recording: recordingOf(url) }))
+    ).json()) as FeedbackResponse;
+    expect(kept.projectName).toBe("alpha");
+    expect(kept.diagnostics?.recording).toEqual(recordingOf(url));
   });
 
   it("drops a recording when no recordingStorage is configured", async () => {

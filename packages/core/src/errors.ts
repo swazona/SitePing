@@ -123,7 +123,8 @@ export type SitepingConfigErrorCode =
   | "CONFIG_WEBHOOK_TIMEOUT_INVALID"
   | "CONFIG_API_KEY_REQUIRED"
   | "CONFIG_RATE_LIMIT_INVALID"
-  | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED";
+  | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED"
+  | "CONFIG_RECORDING_UPLOAD_HOOK_MISSING";
 
 /**
  * Thrown by `createSitepingHandler` while it is created, never per request,

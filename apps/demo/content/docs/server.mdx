@@ -172,6 +172,7 @@ const store: SitepingRateLimitStore = {
 | `webhooks` | `WebhookConfig \| WebhookConfig[]` | — | Fire on each new feedback, and on the [events](#events) each one opts into — see [webhooks](#webhooks) |
 | `waitUntil` | `(promise) => void` | — | Keeps webhook deliveries alive after the response on serverless and edge runtimes — see [webhooks](#webhooks) |
 | `beforeCreate` | `(input, context) => input` | — | Rewrite a submission before it is stored — see [extension points](#extension-points) |
+| `beforeRecordingUpload` | `(input, context) => target` | — | Pin or refuse a [recording upload](/docs/widget/recording#how-a-recording-reaches-storage)'s project before it is authorized and stored; required with `beforeCreate` and `recordingStorage` |
 | `beforeComment` | `(input, context) => input` | — | The same for a [thread](/docs/comments) reply |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transform each record before it is sent |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
@@ -206,6 +207,7 @@ createSitepingHandler({
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` without `apiKey`, `access` or `requireAuthForDestructive: false` |
 | `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` without `ipHeader` or `key`, or a `limit` or `windowMs` that is not a positive integer |
 | `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` over a store with threads that does not implement `addCommentIfAbsent` |
+| `CONFIG_RECORDING_UPLOAD_HOOK_MISSING` | `beforeCreate` with a `recordingStorage` but no `beforeRecordingUpload`: uploads would be authorized on the browser's `?projectName=` |
 
 ## The security model, honestly
 
@@ -623,7 +625,7 @@ createSitepingHandler({
 });
 ```
 
-- **`beforeCreate`** runs on the validated submission, before `authorize` — which sees the project it returns. **`beforeComment`** does the same for a [reply](/docs/comments), `projectName` and `feedbackId` included — so it runs before the feedback is looked up too, and may run for one that turns out not to exist. The `authorRole` it returns stays a claim, `team` being kept only for a caller [your policy vouches for](/docs/comments#who-speaks-as-the-team). Without it, a reply keeps the name and email its client sent.
+- **`beforeCreate`** runs on the validated submission, before `authorize` — which sees the project it returns. A [recording upload](/docs/widget/recording#how-a-recording-reaches-storage) has its own, **`beforeRecordingUpload`**, required alongside it once recordings are on. **`beforeComment`** does the same for a [reply](/docs/comments), `projectName` and `feedbackId` included — so it runs before the feedback is looked up too, and may run for one that turns out not to exist. The `authorRole` it returns stays a claim, `team` being kept only for a caller [your policy vouches for](/docs/comments#who-speaks-as-the-team). Without it, a reply keeps the name and email its client sent.
 - **`presentFeedback`** runs on each record just before it is sent; `clientId` stripping and email redaction still apply after it.
 - **`onCreated`**, **`onUpdated`**, **`onDeleted`** and **`onCommentCreated`** are awaited before the response, so serverless runtimes don't cut them off. A throw is logged and never fails the request: the write already happened. `onCreated` runs once per stored feedback and `onCommentCreated` once per stored [reply](/docs/comments) — the comment record with the `projectName` of its feedback — never for a replayed `clientId`. `onCommentCreated` needs a store implementing `addCommentIfAbsent`, which tells a new reply from a retried one: every bundled store does, and the handler refuses to start without it.
 - **`onDeleting`** runs before the delete, with `{ kind: "single", id, projectName }` or `{ kind: "project", projectName }`. A throw keeps the record and answers `502`.
@@ -679,7 +681,7 @@ One endpoint, five methods. All bodies are JSON.
 | Method | Purpose | Success |
 |---|---|---|
 | `POST` | Create feedback (widget submissions) — or [a comment](/docs/comments#post-a-comment), when the body has a `feedbackId` | `201` + record. A replayed `clientId` returns the existing record instead of failing (and never notifies webhooks or `onCreated` twice); a `clientId` already used by **another** project is refused with `409` |
-| `POST` with a video body | Upload a [screen recording](/docs/widget/recording#how-a-recording-reaches-storage) (`Content-Type: video/webm` or `video/mp4`, `?projectName=…&clientId=…`), under the same access rule as a create. Only with a `recordingStorage`: otherwise `415` | `201` + `{ url }` |
+| `POST` with a video body | Upload a [screen recording](/docs/widget/recording#how-a-recording-reaches-storage) (`Content-Type: video/webm` or `video/mp4`, `?projectName=…&clientId=…`), under the same access rule as a create, applied to the project `beforeRecordingUpload` returns. Only with a `recordingStorage`: otherwise `415` | `201` + `{ url }` |
 | `GET` | List feedbacks, each with its thread and [`permissions`](#what-each-requester-may-do) | `200` + `{ feedbacks, total, protocol, capabilities, permissions }`, with `Cache-Control: private, max-age=5` (`no-store` under `access`) |
 | `PATCH` | Change a status | `200` + updated record |
 | `DELETE` | Delete one or all — or [a comment](/docs/comments#delete-a-comment), when the body has a `commentId` | `200` + `{ deleted: true }` |
@@ -713,7 +715,7 @@ What 1.x keeps stable:
 
 ### Validation limits worth knowing
 
-The whole body ≤ `maxBodyBytes` (4 MiB) · `message` ≤ 5000 chars · `annotations` ≤ 50 per feedback · comment `body` ≤ 5000 chars, 100 `client` comments per thread (`team` replies are not capped) · `screenshotDataUrl` ≤ 1.5 MB, JPEG/PNG/WebP only · `diagnostics` ≤ 50 console + 20 network entries and 30 component names (≤ 200 chars each); a `diagnostics.recording` is kept only when `recordingStorage.isOwnUrl` recognises its URL · a recording upload ≤ `maxRecordingBytes` (16 MiB), WebM or MP4 by its first bytes, whatever `Content-Type` says · `projectName` ≤ 191 chars · `clientId` ≤ 191 chars and matches `[a-zA-Z0-9_-]+`, and so does a `flowId` · `flowStep` an integer from 1 to 100 · `flowTitle` ≤ 200 chars · `authorEmail` matches the same Unicode-aware pattern as the widget's identity modal (`françois@exemple.fr` is fine), so an address the modal accepts is never rejected here.
+The whole body ≤ `maxBodyBytes` (4 MiB) · `message` ≤ 5000 chars · `annotations` ≤ 50 per feedback · comment `body` ≤ 5000 chars, 100 `client` comments per thread (`team` replies are not capped) · `screenshotDataUrl` ≤ 1.5 MB, JPEG/PNG/WebP only · `diagnostics` ≤ 50 console + 20 network entries and 30 component names (≤ 200 chars each); a `diagnostics.recording` is kept only when `recordingStorage.isOwnUrl` recognises its URL as uploaded for the feedback's project and `clientId` · a recording upload ≤ `maxRecordingBytes` (16 MiB), WebM or MP4 by its first bytes, whatever `Content-Type` says · `projectName` ≤ 191 chars · `clientId` ≤ 191 chars and matches `[a-zA-Z0-9_-]+`, and so does a `flowId` · `flowStep` an integer from 1 to 100 · `flowTitle` ≤ 200 chars · `authorEmail` matches the same Unicode-aware pattern as the widget's identity modal (`françois@exemple.fr` is fine), so an address the modal accepts is never rejected here.
 
 ### Multi-page flows
 

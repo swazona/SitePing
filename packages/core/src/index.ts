@@ -24,7 +24,7 @@ export type { I18n, LocaleLoaders, TranslateFunction } from "./i18n.js";
 export { canonicalizeLocale, createI18n, interpolate, intlLocale, tWithParams } from "./i18n.js";
 export type { SitepingLogger, SitepingWarnLogger } from "./logger.js";
 export { warnSafely } from "./logger.js";
-export type { RecordingStorage } from "./recording-storage.js";
+export type { RecordingOwner, RecordingStorage } from "./recording-storage.js";
 export { RECORDING_MIME_TYPES, sniffRecordingMimeType } from "./recording-storage.js";
 export type {
   FieldDef,

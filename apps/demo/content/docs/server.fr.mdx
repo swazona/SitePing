@@ -172,6 +172,7 @@ const store: SitepingRateLimitStore = {
 | `webhooks` | `WebhookConfig \| WebhookConfig[]` | — | Déclenchés à chaque nouveau feedback, et aux [événements](#événements) que chacun choisit — voir [webhooks](#webhooks) |
 | `waitUntil` | `(promise) => void` | — | Garde les envois de webhooks en vie après la réponse sur les runtimes serverless et edge — voir [webhooks](#webhooks) |
 | `beforeCreate` | `(input, context) => input` | — | Réécrire un envoi avant son enregistrement — voir [points d'extension](#points-dextension) |
+| `beforeRecordingUpload` | `(input, context) => target` | — | Imposer ou refuser le projet d'un [envoi d'enregistrement](/fr/docs/widget/recording#comment-un-enregistrement-arrive-au-stockage) avant son autorisation et son stockage ; obligatoire avec `beforeCreate` et `recordingStorage` |
 | `beforeComment` | `(input, context) => input` | — | La même chose pour une réponse d'un [fil](/fr/docs/comments) |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transformer chaque enregistrement avant son envoi |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
@@ -206,6 +207,7 @@ createSitepingHandler({
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` sans `apiKey`, `access` ni `requireAuthForDestructive: false` |
 | `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` sans `ipHeader` ni `key`, ou un `limit` ou `windowMs` qui n'est pas un entier positif |
 | `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` sur un store à fils qui n'implémente pas `addCommentIfAbsent` |
+| `CONFIG_RECORDING_UPLOAD_HOOK_MISSING` | `beforeCreate` avec un `recordingStorage` mais sans `beforeRecordingUpload` : les envois seraient autorisés sur le `?projectName=` du navigateur |
 
 ## Le modèle de sécurité, franchement
 
@@ -623,7 +625,7 @@ createSitepingHandler({
 });
 ```
 
-- **`beforeCreate`** tourne sur l'envoi validé, avant `authorize` — qui voit le projet qu'il renvoie. **`beforeComment`** fait de même pour une [réponse](/fr/docs/comments), `projectName` et `feedbackId` compris — il tourne donc aussi avant que le feedback soit cherché, et peut tourner pour un feedback qui s'avère ne pas exister. L'`authorRole` qu'il renvoie reste une prétention, `team` n'étant gardé que pour un appelant [dont votre politique répond](/fr/docs/comments#le-rôle-équipe). Sans lui, une réponse garde le nom et l'e-mail envoyés par son client.
+- **`beforeCreate`** tourne sur l'envoi validé, avant `authorize` — qui voit le projet qu'il renvoie. Un [envoi d'enregistrement](/fr/docs/widget/recording#comment-un-enregistrement-arrive-au-stockage) a le sien, **`beforeRecordingUpload`**, obligatoire à côté de lui dès que les enregistrements sont activés. **`beforeComment`** fait de même pour une [réponse](/fr/docs/comments), `projectName` et `feedbackId` compris — il tourne donc aussi avant que le feedback soit cherché, et peut tourner pour un feedback qui s'avère ne pas exister. L'`authorRole` qu'il renvoie reste une prétention, `team` n'étant gardé que pour un appelant [dont votre politique répond](/fr/docs/comments#le-rôle-équipe). Sans lui, une réponse garde le nom et l'e-mail envoyés par son client.
 - **`presentFeedback`** tourne sur chaque enregistrement juste avant son envoi ; le retrait de `clientId` et le masquage de l'e-mail s'appliquent encore après lui.
 - **`onCreated`**, **`onUpdated`**, **`onDeleted`** et **`onCommentCreated`** sont attendus avant la réponse, pour que les runtimes serverless ne les coupent pas. Une exception est journalisée et ne fait jamais échouer la requête : l'écriture a déjà eu lieu. `onCreated` tourne une fois par feedback enregistré et `onCommentCreated` une fois par [réponse](/fr/docs/comments) enregistrée — le commentaire avec le `projectName` de son feedback —, jamais pour un `clientId` rejoué. `onCommentCreated` demande un store qui implémente `addCommentIfAbsent`, seul à distinguer une nouvelle réponse d'un renvoi : tous les stores fournis le font, et le handler refuse de démarrer sans lui.
 - **`onDeleting`** tourne avant la suppression, avec `{ kind: "single", id, projectName }` ou `{ kind: "project", projectName }`. Une exception garde l'enregistrement et répond `502`.
@@ -679,7 +681,7 @@ Un endpoint, cinq méthodes. Tous les corps sont en JSON.
 | Méthode | Rôle | Succès |
 |---|---|---|
 | `POST` | Créer un feedback (envois du widget) — ou [un commentaire](/fr/docs/comments#poster-un-commentaire), quand le corps porte un `feedbackId` | `201` + l'enregistrement. Un `clientId` rejoué renvoie l'enregistrement existant au lieu d'échouer (et ne notifie jamais deux fois les webhooks ni `onCreated`) ; un `clientId` déjà utilisé par **un autre** projet est refusé avec `409` |
-| `POST` avec un corps vidéo | Envoyer un [enregistrement d'écran](/fr/docs/widget/recording#comment-un-enregistrement-arrive-au-stockage) (`Content-Type: video/webm` ou `video/mp4`, `?projectName=…&clientId=…`), sous la même règle d'accès qu'une création. Seulement avec `recordingStorage` : sinon `415` | `201` + `{ url }` |
+| `POST` avec un corps vidéo | Envoyer un [enregistrement d'écran](/fr/docs/widget/recording#comment-un-enregistrement-arrive-au-stockage) (`Content-Type: video/webm` ou `video/mp4`, `?projectName=…&clientId=…`), sous la même règle d'accès qu'une création, appliquée au projet que renvoie `beforeRecordingUpload`. Seulement avec `recordingStorage` : sinon `415` | `201` + `{ url }` |
 | `GET` | Lister les feedbacks, chacun avec son fil et ses [`permissions`](#ce-que-chaque-appelant-peut-faire) | `200` + `{ feedbacks, total, protocol, capabilities, permissions }`, avec `Cache-Control: private, max-age=5` (`no-store` avec `access`) |
 | `PATCH` | Changer un statut | `200` + l'enregistrement mis à jour |
 | `DELETE` | Supprimer un ou tous — ou [un commentaire](/fr/docs/comments#supprimer-un-commentaire), quand le corps porte un `commentId` | `200` + `{ deleted: true }` |
@@ -713,7 +715,7 @@ Ce que la 1.x garde stable :
 
 ### Les limites de validation à connaître
 
-Le corps entier ≤ `maxBodyBytes` (4 Mio) · `message` ≤ 5000 caractères · `annotations` ≤ 50 par feedback · `body` d'un commentaire ≤ 5000 caractères, 100 commentaires `client` par fil (les réponses `team` ne sont pas plafonnées) · `screenshotDataUrl` ≤ 1,5 Mo, JPEG/PNG/WebP uniquement · `diagnostics` ≤ 50 entrées console + 20 réseau et 30 noms de composants (≤ 200 caractères chacun) ; un `diagnostics.recording` n'est gardé que si `recordingStorage.isOwnUrl` reconnaît son URL · un enregistrement envoyé ≤ `maxRecordingBytes` (16 Mio), WebM ou MP4 d'après ses premiers octets, quel que soit le `Content-Type` · `projectName` ≤ 191 caractères · `clientId` ≤ 191 caractères et doit correspondre à `[a-zA-Z0-9_-]+`, de même qu'un `flowId` · `flowStep` un entier de 1 à 100 · `flowTitle` ≤ 200 caractères · `authorEmail` suit le même motif Unicode que la fenêtre d'identité du widget (`françois@exemple.fr` passe), donc une adresse acceptée par la fenêtre n'est jamais refusée ici.
+Le corps entier ≤ `maxBodyBytes` (4 Mio) · `message` ≤ 5000 caractères · `annotations` ≤ 50 par feedback · `body` d'un commentaire ≤ 5000 caractères, 100 commentaires `client` par fil (les réponses `team` ne sont pas plafonnées) · `screenshotDataUrl` ≤ 1,5 Mo, JPEG/PNG/WebP uniquement · `diagnostics` ≤ 50 entrées console + 20 réseau et 30 noms de composants (≤ 200 caractères chacun) ; un `diagnostics.recording` n'est gardé que si `recordingStorage.isOwnUrl` reconnaît son URL comme envoyée pour le projet et le `clientId` du feedback · un enregistrement envoyé ≤ `maxRecordingBytes` (16 Mio), WebM ou MP4 d'après ses premiers octets, quel que soit le `Content-Type` · `projectName` ≤ 191 caractères · `clientId` ≤ 191 caractères et doit correspondre à `[a-zA-Z0-9_-]+`, de même qu'un `flowId` · `flowStep` un entier de 1 à 100 · `flowTitle` ≤ 200 caractères · `authorEmail` suit le même motif Unicode que la fenêtre d'identité du widget (`françois@exemple.fr` passe), donc une adresse acceptée par la fenêtre n'est jamais refusée ici.
 
 ### Parcours sur plusieurs pages
 

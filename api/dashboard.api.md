@@ -339,6 +339,7 @@ export interface Translations {
     "export.section.environment": string;
     "export.section.location": string;
     "export.section.network": string;
+    "export.section.recording": string;
     "export.section.screenshot": string;
     "export.section.thread": string;
     "export.sections": string;

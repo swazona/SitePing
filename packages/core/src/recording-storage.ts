@@ -11,7 +11,9 @@ import type { RecordingInfo } from "./types.js";
  * the video itself (`Content-Type: video/webm` or `video/mp4`) — and the
  * server hands the bytes to `upload`. The feedback sent next carries the URL
  * returned, in `diagnostics.recording`; the server keeps it only when
- * `isOwnUrl` recognises it, so a client cannot attach any URL it likes.
+ * `isOwnUrl` recognises it as an upload for that feedback's project and
+ * `clientId`, so a client cannot attach any URL it likes — nor one uploaded
+ * for another project.
  *
  * Configure it on `createSitepingHandler({ recordingStorage })`; the list
  * responses then advertise `capabilities.recordings`, which is what makes
@@ -24,15 +26,26 @@ import type { RecordingInfo } from "./types.js";
  * const s3 = new S3Client({ region: "eu-west-3" });
  * const base = "https://cdn.example.com/";
  * const recordingStorage: RecordingStorage = {
- *   async upload(bytes, { mimeType }) {
- *     const key = `siteping-recordings/${crypto.randomUUID()}`; // fresh per upload
+ * // The key names who the upload is for, so `isOwnUrl` can check it.
+ * const prefix = ({ projectName, clientId }: RecordingOwner) =>
+ *   `${base}siteping-recordings/${encodeURIComponent(projectName)}/${clientId}/`;
+ * const recordingStorage: RecordingStorage = {
+ *   async upload(bytes, { mimeType, ...owner }) {
+ *     const url = `${prefix(owner)}${crypto.randomUUID()}`; // fresh per upload
+ *     const key = url.slice(base.length);
  *     await s3.send(new PutObjectCommand({ Bucket: "my-bucket", Key: key, Body: bytes, ContentType: mimeType }));
- *     return { url: `${base}${key}` };
+ *     return { url };
  *   },
- *   isOwnUrl: (url) => url.startsWith(`${base}siteping-recordings/`),
+ *   isOwnUrl: (url, owner) => url.startsWith(prefix(owner)) && !url.slice(prefix(owner).length).includes("/"),
  * };
  * ```
  */
+/** Who a recording was uploaded for: the project and the `clientId` of the feedback it joins. */
+export interface RecordingOwner {
+  projectName: string;
+  clientId: string;
+}
+
 export interface RecordingStorage {
   /**
    * Persist one recording and return the URL a reviewer opens it at. The
@@ -40,17 +53,29 @@ export interface RecordingStorage {
    * `maxRecordingBytes`. Key each upload by a fresh random value: the URL
    * is the only thing that ties a recording to its feedback.
    *
-   * `ctx.projectName` is the project the upload was authorized for, and
-   * `ctx.clientId` the idempotency key of the feedback it will join (both
-   * client-supplied, validated as an identifier: sanitize them before using
-   * them in a path).
+   * `ctx.projectName` is the project the upload was authorized for (after
+   * `beforeRecordingUpload`, which may pin it), and `ctx.clientId` the
+   * idempotency key of the feedback it will join (validated as an
+   * identifier, but sanitize them before using them in a path). Remember
+   * both with the object — in its key, as in the example — so `isOwnUrl`
+   * can check them.
+   *
+   * An upload no feedback ever names is an orphan (the visitor closed the
+   * tab, the create was refused): give the bucket an expiry rule for
+   * objects no feedback references, e.g. delete what is older than a day
+   * and not named by any stored `diagnostics.recording.url`.
    */
   upload(
     bytes: Uint8Array<ArrayBuffer>,
     ctx: { mimeType: RecordingInfo["mimeType"]; projectName: string; clientId: string },
   ): Promise<{ url: string }>;
-  /** Whether `url` is one `upload` returned — a feedback naming any other recording URL loses it. */
-  isOwnUrl(url: string): boolean;
+  /**
+   * Whether `url` is one `upload` returned for `owner` — the project and
+   * `clientId` of the feedback being created, after `beforeCreate`. A
+   * feedback naming any other recording URL, one uploaded for another
+   * project or another feedback included, loses it.
+   */
+  isOwnUrl(url: string, owner: RecordingOwner): boolean;
 }
 
 /** Media types a recording upload may declare. */

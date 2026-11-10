@@ -39,30 +39,47 @@ Content-Type: video/webm
 <the video's bytes>
 ```
 
-The server applies the same access rule as a create (`action: "create"` on that project), refuses more than `maxRecordingBytes` (default 16 MiB) with `413`, reads the type from the file's first bytes (WebM or MP4, whatever `Content-Type` claims), and hands the bytes to your `recordingStorage`. It answers `201 { url }`, and the feedback sent next carries that URL in `diagnostics.recording`. The server keeps it only when `recordingStorage.isOwnUrl(url)` says the URL is one it produced, so a client cannot attach any address it likes.
+The server refuses more than `maxRecordingBytes` (default 16 MiB) with `413`, reads the type from the file's first bytes (WebM or MP4, whatever `Content-Type` claims), runs your `beforeRecordingUpload` (below), applies the same access rule as a create (`action: "create"`) to the project it returns, and hands the bytes to your `recordingStorage` under that project. It answers `201 { url }`, and the feedback sent next carries that URL in `diagnostics.recording`. The server keeps it only when `recordingStorage.isOwnUrl(url, { projectName, clientId })` says the URL is one it produced for that feedback's project and `clientId` (as stored, after `beforeCreate`), so a client can neither attach any address it likes nor borrow another project's upload.
+
+**Pinning the project.** The upload's `?projectName=` is the browser's claim. If your `beforeCreate` imposes the project from the session or the hostname, give uploads the same rule with `beforeRecordingUpload(input, context)`: it receives `{ projectName, clientId, mimeType, size }` once the file is read and checked, and returns the `{ projectName, clientId }` to authorize and store under (or throws, which answers a logged `500`). With a `beforeCreate` and a `recordingStorage`, the handler refuses to start without it (`CONFIG_RECORDING_UPLOAD_HOOK_MISSING`) rather than guess what your `beforeCreate` would do with an upload; return the input unchanged to keep the query's project.
+
+```ts
+createSitepingHandler({
+  store,
+  recordingStorage,
+  beforeCreate: (input, { request }) => ({ ...input, projectName: projectOf(request) }),
+  beforeRecordingUpload: (input, { request }) => ({ ...input, projectName: projectOf(request) }),
+});
+```
 
 `RecordingStorage` is two functions — here over an S3 bucket:
 
 ```ts
-import { createSitepingHandler, type RecordingStorage } from "@siteping/server";
+import { createSitepingHandler, type RecordingOwner, type RecordingStorage } from "@siteping/server";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({ region: "eu-west-3" });
 const base = "https://cdn.example.com/";
 
+// The key names the project and the feedback an upload is for, so isOwnUrl can check them.
+const prefix = ({ projectName, clientId }: RecordingOwner) =>
+  `${base}siteping-recordings/${encodeURIComponent(projectName)}/${clientId}/`;
+
 const recordingStorage: RecordingStorage = {
-  async upload(bytes, { mimeType }) {
-    const key = `siteping-recordings/${crypto.randomUUID()}`; // a fresh key per upload
-    await s3.send(new PutObjectCommand({ Bucket: "my-bucket", Key: key, Body: bytes, ContentType: mimeType }));
-    return { url: `${base}${key}` };
+  async upload(bytes, { mimeType, ...owner }) {
+    const url = `${prefix(owner)}${crypto.randomUUID()}`; // a fresh key per upload
+    await s3.send(
+      new PutObjectCommand({ Bucket: "my-bucket", Key: url.slice(base.length), Body: bytes, ContentType: mimeType }),
+    );
+    return { url };
   },
-  isOwnUrl: (url) => url.startsWith(`${base}siteping-recordings/`),
+  isOwnUrl: (url, owner) => url.startsWith(prefix(owner)) && !url.slice(prefix(owner).length).includes("/"),
 };
 
 export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({ store, recordingStorage });
 ```
 
-The record keeps the URL only: `diagnostics` is the JSON column every store already persists, so no migration is needed. Deleting a feedback does not delete its video; expire the prefix with a bucket lifecycle rule if you need to.
+The record keeps the URL only: `diagnostics` is the JSON column every store already persists, so no migration is needed. Deleting a feedback does not delete its video, and an upload no feedback ever names (the reviewer closed the tab, the create was refused, `isOwnUrl` dropped it) stays an orphan: give the bucket an expiry rule — say, delete objects under the prefix older than a day that no stored `diagnostics.recording.url` names, or expire the whole prefix after your retention period.
 
 If the upload fails on the network, the feedback and its video wait together in the [offline queue](/docs/widget#reliability-details-you-get-for-free) and are sent together later. If the server refuses the video (too large, not a video), the feedback is sent without it and the widget says so.
 

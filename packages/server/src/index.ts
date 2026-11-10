@@ -14,6 +14,7 @@ export type {
   FeedbackStatus,
   FeedbackType,
   RecordingInfo,
+  RecordingOwner,
   RecordingStorage,
   ScreenshotRegion,
   SitepingCapabilities,
@@ -40,6 +41,8 @@ export type {
   SitepingLifecycleHooks,
   SitepingPrincipal,
   SitepingProjectContext,
+  SitepingRecordingUploadInput,
+  SitepingRecordingUploadTarget,
   SitepingReporterEvent,
   SitepingRequestContext,
 } from "./options.js";

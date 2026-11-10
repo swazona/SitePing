@@ -50,6 +50,7 @@ describe("isSitepingConfigError", () => {
       | "CONFIG_API_KEY_REQUIRED"
       | "CONFIG_RATE_LIMIT_INVALID"
       | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED"
+      | "CONFIG_RECORDING_UPLOAD_HOOK_MISSING"
     >();
     if (isSitepingConfigError(thrown)) {
       expectTypeOf(thrown.code).toEqualTypeOf<SitepingConfigErrorCode>();

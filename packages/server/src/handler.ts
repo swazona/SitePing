@@ -120,6 +120,7 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     waitUntil,
     beforeCreate,
     beforeComment,
+    beforeRecordingUpload,
     presentFeedback,
     hooks = {},
     notifyReporter,
@@ -182,6 +183,17 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
         "implementing `addCommentIfAbsent`, which tells a new reply from a retried one.",
     );
   }
+  // A `beforeCreate` that pins the project from the session would be
+  // bypassed by an upload authorized on the browser's `?projectName=`: a host
+  // relying on it alone would let a caller store into another project's
+  // recordings. Fail closed until the upload has its own hook.
+  if (recordingStorage && beforeCreate && !beforeRecordingUpload) {
+    throw new SitepingConfigError(
+      "CONFIG_RECORDING_UPLOAD_HOOK_MISSING",
+      "[siteping] createSitepingHandler: `beforeCreate` with a `recordingStorage` needs a `beforeRecordingUpload` " +
+        "that pins recording uploads the same way (return its input unchanged to keep the query's project).",
+    );
+  }
   // The same fail-closed rule for reporter notifications of replies.
   if (notifyReporter && store.addComment && !store.addCommentIfAbsent) {
     throw new SitepingConfigError(
@@ -192,7 +204,12 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
   }
   const notify = createNotifier(webhookList, waitUntil, pipeline);
   const limit = createRateLimiter(rateLimit, allowedOrigins, logger);
-  const uploadRecording = uploadRecordingOperation({ pipeline, recordingStorage, maxRecordingBytes });
+  const uploadRecording = uploadRecordingOperation({
+    pipeline,
+    recordingStorage,
+    maxRecordingBytes,
+    beforeUpload: beforeRecordingUpload,
+  });
   const postJson = routeByBody(
     pipeline,
     "POST",

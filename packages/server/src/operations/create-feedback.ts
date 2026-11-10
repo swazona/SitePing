@@ -32,7 +32,7 @@ interface CreateOutcome {
 }
 
 /** Store input from the validated payload — the store never sees wire-only shapes. */
-function toCreateInput(data: FeedbackPayload, recordingStorage: RecordingStorage | undefined): FeedbackCreateInput {
+function toCreateInput(data: FeedbackPayload): FeedbackCreateInput {
   return {
     projectName: data.projectName,
     type: data.type,
@@ -48,7 +48,7 @@ function toCreateInput(data: FeedbackPayload, recordingStorage: RecordingStorage
     annotations: data.annotations.map(flattenAnnotation),
     screenshotDataUrl: data.screenshotDataUrl ?? null,
     screenshotRegion: data.screenshotRegion ?? null,
-    diagnostics: data.diagnostics ? keepOwnRecording(data.diagnostics, recordingStorage) : null,
+    diagnostics: data.diagnostics ?? null,
     flowId: data.flowId ?? null,
     flowStep: data.flowStep ?? null,
     // A blank title (trimmed by the schema) is an untitled flow.
@@ -57,23 +57,28 @@ function toCreateInput(data: FeedbackPayload, recordingStorage: RecordingStorage
 }
 
 /**
- * The diagnostics without a `recording` the storage does not recognise as
- * its own: a client names the URL, so any other one — or any at all without
- * a `recordingStorage` — is dropped rather than stored for reviewers to open.
+ * `input` without a `diagnostics.recording` the storage does not recognise
+ * as uploaded for this feedback — its project and `clientId`, as stored
+ * (after `beforeCreate`). A client names the URL, so any other one (another
+ * project's upload included), or any at all without a `recordingStorage`, is
+ * dropped rather than stored for reviewers to open.
  */
 function keepOwnRecording(
-  diagnostics: NonNullable<FeedbackPayload["diagnostics"]>,
+  input: FeedbackCreateInput,
   recordingStorage: RecordingStorage | undefined,
-): NonNullable<FeedbackPayload["diagnostics"]> {
-  const { recording, ...rest } = diagnostics;
-  if (!recording) return diagnostics;
+): FeedbackCreateInput {
+  const recording = input.diagnostics?.recording;
+  if (!input.diagnostics || !recording) return input;
   let own = false;
   try {
-    own = recordingStorage?.isOwnUrl(recording.url) === true;
+    own =
+      recordingStorage?.isOwnUrl(recording.url, { projectName: input.projectName, clientId: input.clientId }) === true;
   } catch {
     // A throwing predicate owns nothing.
   }
-  return own ? diagnostics : rest;
+  if (own) return input;
+  const { recording: _dropped, ...diagnostics } = input.diagnostics;
+  return { ...input, diagnostics };
 }
 
 /** `POST` — create a feedback, idempotent on `clientId`. */
@@ -127,8 +132,13 @@ export function createFeedbackOperation<Principal>({
 
     let input: FeedbackCreateInput;
     try {
-      const validated = toCreateInput(payload.value, recordingStorage);
-      input = beforeCreate ? await beforeCreate(validated, scope.context) : validated;
+      const validated = toCreateInput(payload.value);
+      // The recording is checked against the feedback as it will be stored:
+      // after `beforeCreate`, which may pin the project.
+      input = keepOwnRecording(
+        beforeCreate ? await beforeCreate(validated, scope.context) : validated,
+        recordingStorage,
+      );
       const refusal = await pipeline.authorize(scope, { action: "create", projectName: input.projectName });
       if (refusal) return refusal;
     } catch (error) {

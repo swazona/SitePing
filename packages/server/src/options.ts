@@ -5,6 +5,7 @@ import type {
   FeedbackCreateInput,
   FeedbackRecord,
   OpenFeedbackStatus,
+  RecordingInfo,
   RecordingStorage,
   SitepingLogger,
   SitepingStore,
@@ -17,6 +18,24 @@ export type SitepingHttpMethod = "GET" | "POST" | "PATCH" | "DELETE" | "OPTIONS"
 
 /** What a request does, as `SitepingAccessControl.authorize` sees it. */
 export type SitepingAction = "create" | "list" | "update" | "delete" | "deleteAll" | "createComment" | "deleteComment";
+
+/** A recording upload as `beforeRecordingUpload` sees it: the query's target, and the file. */
+export interface SitepingRecordingUploadInput {
+  /** From `?projectName=` — the browser's claim. */
+  projectName: string;
+  /** From `?clientId=` — the idempotency key of the feedback the recording will join. */
+  clientId: string;
+  /** Read from the file's first bytes. */
+  mimeType: RecordingInfo["mimeType"];
+  /** The file's size in bytes. */
+  size: number;
+}
+
+/** Where `beforeRecordingUpload` sends an upload: returning its input unchanged keeps the query's target. */
+export interface SitepingRecordingUploadTarget {
+  projectName: string;
+  clientId: string;
+}
 
 /** The request being served, and who sent it. */
 export interface SitepingRequestContext<Principal> {
@@ -192,8 +211,13 @@ export interface SitepingHandlerBaseOptions<Principal> {
    * (`Content-Type: video/webm` or `video/mp4`, `?projectName=…&clientId=…`)
    * is stored through it under the same access rule as a create and answers
    * `201 { url }`. A feedback then keeps a `diagnostics.recording` only when
-   * `isOwnUrl` recognises its URL. Without it, such a POST answers 415 and
-   * any `diagnostics.recording` is dropped.
+   * `isOwnUrl` recognises its URL as uploaded for the feedback's project and
+   * `clientId`. Without it, such a POST answers 415 and any
+   * `diagnostics.recording` is dropped.
+   *
+   * With a `beforeCreate`, a `beforeRecordingUpload` is required too (the
+   * handler refuses to start without it): a hook that pins the project of a
+   * feedback must pin the project of its upload as well.
    */
   recordingStorage?: RecordingStorage | undefined;
   /**
@@ -235,6 +259,22 @@ export interface SitepingHandlerBaseOptions<Principal> {
     input: FeedbackCreateInput,
     context: SitepingRequestContext<Principal>,
   ): FeedbackCreateInput | Promise<FeedbackCreateInput>;
+  /**
+   * `beforeCreate` for screen recording uploads: rewrite or refuse the
+   * upload's target before it is authorized and stored — impose the project
+   * from the session, as `beforeCreate` does for the feedback. Runs once the
+   * body is read and checked to be WebM or MP4 (`mimeType` and `size`, in
+   * bytes, describe it), before `access.authorize`, which sees the
+   * `projectName` it returns; the upload goes to `recordingStorage` under the
+   * `projectName` and `clientId` it returns. A throw answers a logged 500 and
+   * stores nothing.
+   *
+   * Required when `beforeCreate` is set and `recordingStorage` too.
+   */
+  beforeRecordingUpload?(
+    input: SitepingRecordingUploadInput,
+    context: SitepingRequestContext<Principal>,
+  ): SitepingRecordingUploadTarget | Promise<SitepingRecordingUploadTarget>;
   /**
    * `beforeCreate` for the replies of a thread: rewrite the validated comment
    * before it is stored — impose the author from the session, redact secrets

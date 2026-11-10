@@ -39,30 +39,47 @@ Content-Type: video/webm
 <les octets de la vidéo>
 ```
 
-Le serveur applique la même règle d'accès qu'une création (`action: "create"` sur ce projet), refuse au-delà de `maxRecordingBytes` (16 Mio par défaut) avec un `413`, lit le type dans les premiers octets du fichier (WebM ou MP4, quoi que dise le `Content-Type`), et confie les octets à votre `recordingStorage`. Il répond `201 { url }`, et le feedback envoyé ensuite porte cette URL dans `diagnostics.recording`. Le serveur ne la garde que si `recordingStorage.isOwnUrl(url)` reconnaît une URL qu'il a produite : un client ne peut pas joindre n'importe quelle adresse.
+Le serveur refuse au-delà de `maxRecordingBytes` (16 Mio par défaut) avec un `413`, lit le type dans les premiers octets du fichier (WebM ou MP4, quoi que dise le `Content-Type`), lance votre `beforeRecordingUpload` (ci-dessous), applique la même règle d'accès qu'une création (`action: "create"`) au projet qu'il renvoie, et confie les octets à votre `recordingStorage` sous ce projet. Il répond `201 { url }`, et le feedback envoyé ensuite porte cette URL dans `diagnostics.recording`. Le serveur ne la garde que si `recordingStorage.isOwnUrl(url, { projectName, clientId })` reconnaît une URL qu'il a produite pour le projet et le `clientId` de ce feedback (tels qu'enregistrés, après `beforeCreate`) : un client ne peut ni joindre n'importe quelle adresse, ni emprunter l'envoi d'un autre projet.
+
+**Imposer le projet.** Le `?projectName=` de l'envoi est ce qu'affirme le navigateur. Si votre `beforeCreate` impose le projet depuis la session ou le nom d'hôte, appliquez la même règle aux envois avec `beforeRecordingUpload(input, context)` : il reçoit `{ projectName, clientId, mimeType, size }` une fois le fichier lu et vérifié, et renvoie le `{ projectName, clientId }` sous lequel autoriser et stocker (ou lève une erreur, qui répond un `500` journalisé). Avec un `beforeCreate` et un `recordingStorage`, le handler refuse de démarrer sans lui (`CONFIG_RECORDING_UPLOAD_HOOK_MISSING`) plutôt que de deviner ce que votre `beforeCreate` ferait d'un envoi ; renvoyez l'entrée telle quelle pour garder le projet de la requête.
+
+```ts
+createSitepingHandler({
+  store,
+  recordingStorage,
+  beforeCreate: (input, { request }) => ({ ...input, projectName: projectOf(request) }),
+  beforeRecordingUpload: (input, { request }) => ({ ...input, projectName: projectOf(request) }),
+});
+```
 
 `RecordingStorage` tient en deux fonctions — ici sur un bucket S3 :
 
 ```ts
-import { createSitepingHandler, type RecordingStorage } from "@siteping/server";
+import { createSitepingHandler, type RecordingOwner, type RecordingStorage } from "@siteping/server";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({ region: "eu-west-3" });
 const base = "https://cdn.example.com/";
 
+// La clé nomme le projet et le feedback de l'envoi, pour que isOwnUrl puisse les vérifier.
+const prefix = ({ projectName, clientId }: RecordingOwner) =>
+  `${base}siteping-recordings/${encodeURIComponent(projectName)}/${clientId}/`;
+
 const recordingStorage: RecordingStorage = {
-  async upload(bytes, { mimeType }) {
-    const key = `siteping-recordings/${crypto.randomUUID()}`; // une clé neuve par envoi
-    await s3.send(new PutObjectCommand({ Bucket: "mon-bucket", Key: key, Body: bytes, ContentType: mimeType }));
-    return { url: `${base}${key}` };
+  async upload(bytes, { mimeType, ...owner }) {
+    const url = `${prefix(owner)}${crypto.randomUUID()}`; // une clé neuve par envoi
+    await s3.send(
+      new PutObjectCommand({ Bucket: "mon-bucket", Key: url.slice(base.length), Body: bytes, ContentType: mimeType }),
+    );
+    return { url };
   },
-  isOwnUrl: (url) => url.startsWith(`${base}siteping-recordings/`),
+  isOwnUrl: (url, owner) => url.startsWith(prefix(owner)) && !url.slice(prefix(owner).length).includes("/"),
 };
 
 export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({ store, recordingStorage });
 ```
 
-L'enregistrement en base ne garde que l'URL : `diagnostics` est la colonne JSON que tous les stores enregistrent déjà, aucune migration n'est nécessaire. Supprimer un feedback ne supprime pas sa vidéo ; faites expirer le préfixe avec une règle de cycle de vie du bucket si besoin.
+L'enregistrement en base ne garde que l'URL : `diagnostics` est la colonne JSON que tous les stores enregistrent déjà, aucune migration n'est nécessaire. Supprimer un feedback ne supprime pas sa vidéo, et un envoi qu'aucun feedback ne nomme jamais (onglet fermé, création refusée, URL écartée par `isOwnUrl`) reste orphelin : donnez au bucket une règle d'expiration — par exemple supprimer, sous le préfixe, les objets de plus d'un jour qu'aucun `diagnostics.recording.url` enregistré ne nomme, ou faire expirer tout le préfixe après votre durée de conservation.
 
 Si l'envoi échoue sur le réseau, le feedback et sa vidéo attendent ensemble dans la [file hors ligne](/fr/docs/widget#la-fiabilité-sans-rien-faire) et partent ensemble plus tard. Si le serveur refuse la vidéo (trop grande, pas une vidéo), le feedback part sans elle et le widget le signale.
 

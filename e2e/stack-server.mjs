@@ -70,12 +70,16 @@ const recordingHandler = createSitepingHandler({
   store,
   requireAuthForDestructive: false,
   recordingStorage: {
-    async upload(bytes, { mimeType }) {
+    async upload(bytes, { mimeType, projectName, clientId }) {
       const url = `${ORIGIN}/__e2e/recordings/${recordings.size + 1}`;
-      recordings.set(url, { bytes, mimeType });
+      recordings.set(url, { bytes, mimeType, projectName, clientId });
       return { url };
     },
-    isOwnUrl: (url) => recordings.has(url),
+    // Owned only for the project and feedback it was uploaded for.
+    isOwnUrl: (url, owner) => {
+      const entry = recordings.get(url);
+      return entry?.projectName === owner.projectName && entry.clientId === owner.clientId;
+    },
   },
 });
 

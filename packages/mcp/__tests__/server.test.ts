@@ -44,7 +44,7 @@ function stack(redact?: SitepingRedactionPolicy) {
     // Owns the recording URLs seeds name, so a feedback keeps them.
     recordingStorage: {
       upload: async () => ({ url: "https://cdn.example/rec/uploaded.webm" }),
-      isOwnUrl: (url) => url.startsWith("https://cdn.example/rec/"),
+      isOwnUrl: (url, owner) => url.startsWith("https://cdn.example/rec/") && owner.projectName === PROJECT,
     },
   });
   const requests: Request[] = [];

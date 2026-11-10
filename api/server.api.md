@@ -193,8 +193,13 @@ export interface RecordingInfo {
     url: string;
 }
 
+export interface RecordingOwner {
+    clientId: string;
+    projectName: string;
+}
+
 export interface RecordingStorage {
-    isOwnUrl(url: string): boolean;
+    isOwnUrl(url: string, owner: RecordingOwner): boolean;
     upload(bytes: Uint8Array<ArrayBuffer>, ctx: {
         clientId: string;
         mimeType: RecordingInfo["mimeType"];
@@ -204,7 +209,7 @@ export interface RecordingStorage {
     }>;
 }
 
-export const SITEPING_PROTOCOL_VERSION = 2;
+export const SITEPING_PROTOCOL_VERSION = 3;
 
 export interface ScreenshotRegion {
     hPct: number;
@@ -252,7 +257,7 @@ export interface SitepingCapabilities {
     recordings?: boolean | undefined;
 }
 
-export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_RATE_LIMIT_INVALID" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
+export type SitepingConfigErrorCode = "CONFIG_API_KEY_REQUIRED" | "CONFIG_MAX_BODY_BYTES_INVALID" | "CONFIG_NOTIFY_REPORTER_UNSUPPORTED" | "CONFIG_OWNERSHIP_CHECK_MISSING" | "CONFIG_RATE_LIMIT_INVALID" | "CONFIG_RECORDING_UPLOAD_HOOK_MISSING" | "CONFIG_STORE_MISSING" | "CONFIG_WEBHOOK_TIMEOUT_INVALID";
 
 export interface SitepingCreatedComment extends CommentRecord {
     projectName: string;
@@ -279,6 +284,7 @@ export interface SitepingHandlerBaseOptions<Principal> {
     allowedOrigins?: ReadonlyArray<string> | undefined;
     beforeComment?(input: CommentPayload, context: SitepingRequestContext<Principal>): CommentPayload | Promise<CommentPayload>;
     beforeCreate?(input: FeedbackCreateInput, context: SitepingRequestContext<Principal>): FeedbackCreateInput | Promise<FeedbackCreateInput>;
+    beforeRecordingUpload?(input: SitepingRecordingUploadInput, context: SitepingRequestContext<Principal>): Promise<SitepingRecordingUploadTarget> | SitepingRecordingUploadTarget;
     describeError?(error: unknown): string | undefined;
     hooks?: SitepingLifecycleHooks<Principal>;
     logger?: SitepingLogger | undefined;
@@ -336,6 +342,18 @@ export interface SitepingRateLimitRule {
 export interface SitepingRateLimitStore {
     get(key: string): Promise<number> | number;
     increment(key: string, ttlMs: number): Promise<number> | number;
+}
+
+export interface SitepingRecordingUploadInput {
+    clientId: string;
+    mimeType: RecordingInfo["mimeType"];
+    projectName: string;
+    size: number;
+}
+
+export interface SitepingRecordingUploadTarget {
+    clientId: string;
+    projectName: string;
 }
 
 export type SitepingReporterEvent = {
