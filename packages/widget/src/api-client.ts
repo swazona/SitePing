@@ -8,7 +8,6 @@ import {
   type FeedbackResponse,
   type FeedbackResponseList,
   feedbackQueryToSearchParams,
-  hasOwn,
   mergeRequestHeaders,
   networkErrorFromException,
   type Prettify,
@@ -20,6 +19,7 @@ import {
   withSearchParams,
 } from "@siteping/core";
 import { ownFeedback } from "./own-feedback.js";
+import type { PendingRecording } from "./recording-upload.js";
 
 /**
  * Abstract client interface used by the widget internals.
@@ -28,7 +28,12 @@ import { ownFeedback } from "./own-feedback.js";
  * this interface, allowing the widget to work identically in either mode.
  */
 export interface WidgetClient {
-  sendFeedback(payload: FeedbackPayload): Promise<FeedbackResponse>;
+  /**
+   * Send a feedback. With a `recording`, the HTTP client uploads it first and
+   * names it in `diagnostics.recording` (see `recording-upload.ts`); a store
+   * has nowhere to put one and ignores it.
+   */
+  sendFeedback(payload: FeedbackPayload, recording?: PendingRecording): Promise<FeedbackResponse>;
   getFeedbacks(projectName: string, options?: GetFeedbacksOptions): Promise<FeedbackResponseList>;
   resolveFeedback(id: string, resolved: boolean): Promise<FeedbackResponse>;
   deleteFeedback(id: string): Promise<void>;
@@ -68,8 +73,10 @@ const MAX_RETRY_AFTER_MS = 10_000;
  * the first request.
  */
 const DELETE_ALL_TIMEOUT_MS = 60_000;
+/** localStorage key of the queue earlier widgets kept (still read, see `offline-queue.ts`). */
 const RETRY_QUEUE_KEY = "siteping_retry_queue";
-const MAX_QUEUE_SIZE = 20;
+/** localStorage flag: the IndexedDB outbox holds entries — a page load replays them. */
+const OUTBOX_FLAG_KEY = "siteping_outbox";
 
 /**
  * Settle like `promise`, or reject with `onTimeout()` once `ms` elapse; the
@@ -182,13 +189,8 @@ function retryDelay(response: Response | null, attempt: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Retry queue — persist failed feedbacks for retry on next page load
+// Offline queue — a lazy chunk (`offline-queue.ts`); only its entry points here
 // ---------------------------------------------------------------------------
-
-interface RetryEntry {
-  endpoint: string;
-  payload: FeedbackPayload;
-}
 
 /**
  * Whether a failed submission is worth replaying later. Network failures,
@@ -208,59 +210,63 @@ function isTransientStatus(status: number): boolean {
   return status >= 500 || status === 408 || status === 429;
 }
 
-const LOCK_NAME = "siteping_retry_queue";
+type OfflineQueue = typeof import("./offline-queue.js");
+let offlineQueue: OfflineQueue | null = null;
 
-/**
- * Acquire a Web Lock to serialize cross-tab access to the retry queue.
- * Falls back to running the callback without locking on older browsers.
- */
-async function withRetryLock<T>(callback: () => T | Promise<T>): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.locks) {
-    return navigator.locks.request(LOCK_NAME, () => callback());
-  }
-  return callback();
+function loadOfflineQueue(): Promise<OfflineQueue> {
+  return import("./offline-queue.js").then((module) => {
+    module.configureOfflineQueue({
+      retryQueueKey: RETRY_QUEUE_KEY,
+      outboxFlagKey: OUTBOX_FLAG_KEY,
+      timeoutMs: TIMEOUT_MS,
+      buildRequestHeaders,
+      isTransientStatus,
+      markOwn: (projectName, endpoint, id) => ownFeedback(projectName, endpoint).add(id),
+    });
+    offlineQueue = module;
+    return module;
+  });
 }
 
 /**
- * Shape-check one queue element — localStorage can hold tampered or legacy
- * entries, and a malformed one used to abort the whole flush via the outer
- * catch. Bad entries are dropped individually instead. The author fields are
- * checked because the flush itself reads them (identity match); anything
- * else wrong with a payload is the server's verdict (4xx → dropped).
+ * Failed sends kept while the queue's own code could not load — offline
+ * before the chunk was ever fetched. Handed to the queue on the next flush.
  */
-function isRetryEntry(value: unknown): value is RetryEntry {
-  if (!hasOwn(value, "endpoint") || typeof value.endpoint !== "string" || !hasOwn(value, "payload")) return false;
-  const { payload } = value;
-  return (
-    hasOwn(payload, "authorName") &&
-    typeof payload.authorName === "string" &&
-    hasOwn(payload, "authorEmail") &&
-    typeof payload.authorEmail === "string"
-  );
-}
+const stash: Array<[endpoint: string, payload: FeedbackPayload, recording: PendingRecording | undefined]> = [];
 
-function readQueue(): RetryEntry[] {
-  const raw = localStorage.getItem(RETRY_QUEUE_KEY);
-  if (!raw) return [];
-  let parsed: unknown;
+/** Queue a failed send (see `enqueue` in `offline-queue.ts`), or stash it when the chunk will not load. */
+async function queueFailedSend(endpoint: string, payload: FeedbackPayload, recording?: PendingRecording) {
   try {
-    parsed = JSON.parse(raw);
+    return await (await loadOfflineQueue()).enqueue(endpoint, payload, recording);
   } catch {
-    // The widget only ever writes JSON.stringify output here, so an external
-    // writer put this value in place. Nothing in it can be replayed; clear it
-    // so the queue works again instead of every write failing on this parse.
-    localStorage.removeItem(RETRY_QUEUE_KEY);
-    console.warn(`[siteping] discarded an unreadable retry queue from localStorage (${raw.length} chars)`);
-    return [];
+    stash.push([endpoint, payload, recording]);
+    return true;
   }
-  return Array.isArray(parsed) ? parsed.filter(isRetryEntry) : [];
 }
 
 /**
- * Whether a failed send was saved for a replay on a later page load: `true`
- * queued, `false` worth queueing but the write failed, absent when the failure
- * is final (a 4xx) or did not come from `sendFeedback`. The widget tells the
- * visitor which one happened.
+ * Fetch the queue's code ahead of need: a send that fails offline could not
+ * download it then. The launcher calls it once the page is idle (HTTP mode).
+ */
+export function preloadOfflineQueue(): void {
+  loadOfflineQueue().catch(() => {});
+}
+
+/** Whether anything may wait in a queue: a stored one, or this page's memory. Cheap — no IndexedDB. */
+export function hasQueuedFeedback(): boolean {
+  if (stash.length > 0 || offlineQueue?.hasMemoryEntries()) return true;
+  try {
+    return localStorage.getItem(RETRY_QUEUE_KEY) !== null || localStorage.getItem(OUTBOX_FLAG_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a failed send was saved for a replay: `true` queued, `false` worth
+ * queueing but no storage would hold it, absent when the failure is final (a
+ * 4xx) or did not come from `sendFeedback`. The widget tells the visitor
+ * which one happened.
  */
 const queueOutcomes = new WeakMap<object, boolean>();
 
@@ -268,210 +274,23 @@ export function queueOutcome(error: unknown): boolean | undefined {
   return typeof error === "object" && error !== null ? queueOutcomes.get(error) : undefined;
 }
 
-/** Resolves whether the entry was persisted. */
-function queueForRetry(endpoint: string, payload: FeedbackPayload): Promise<boolean> {
-  return withRetryLock(() => {
-    try {
-      // A resend from the same popup reuses its clientId: replace the earlier
-      // attempt so the replay carries the latest edit (the server's clientId
-      // dedupe would otherwise keep the stale first one).
-      const queue = readQueue().filter((entry) => entry.payload.clientId !== payload.clientId);
-
-      // Cap queue size to prevent unbounded localStorage growth
-      if (queue.length >= MAX_QUEUE_SIZE) {
-        queue.shift(); // Drop oldest entry
-      }
-
-      queue.push({ endpoint, payload });
-      if (tryWriteQueue(queue)) return true;
-
-      // Quota exceeded: screenshots (base64 JPEG data URLs) dominate each
-      // entry, and up to MAX_QUEUE_SIZE entries share the origin's ~5 MB
-      // localStorage budget with the host page. Shed screenshots (the
-      // heaviest, least essential part of a replay) one at a time, oldest
-      // first like the eviction above, so no more are lost than the quota
-      // requires; the message, annotations and diagnostics still replay.
-      // If even the screenshot-free queue does not fit, evict the oldest
-      // entries.
-      const kept = queue.slice();
-      let stripped = 0;
-      for (const [index, entry] of kept.entries()) {
-        if (!hasScreenshot(entry)) continue;
-        kept[index] = withoutScreenshot(entry);
-        stripped += 1;
-        if (tryWriteQueue(kept)) {
-          console.warn(
-            `[siteping] retry queue exceeded the localStorage quota — dropped the screenshot of ${stripped} of ${queue.length} queued feedback(s)`,
-          );
-          return true;
-        }
-      }
-      while (kept.length > 1) {
-        kept.shift();
-        if (tryWriteQueue(kept)) {
-          const dropped = queue.length - kept.length;
-          const lost = queue.slice(dropped).filter(hasScreenshot).length;
-          console.warn(
-            `[siteping] retry queue exceeded the localStorage quota — dropped the ${dropped} oldest of ${queue.length} queued feedback(s)${lost > 0 ? `, and the screenshot of ${lost} of the rest` : ""}`,
-          );
-          return true;
-        }
-      }
-      // Every write failed, so the queue already stored is left as it was.
-      console.warn("[siteping] feedback could not be queued for retry — localStorage is full or unavailable");
-    } catch {
-      // localStorage unavailable — the new entry is dropped
-    }
-    return false;
-  }).catch(() => false);
-}
-
 /**
- * Drop the queued attempt of a feedback that has just landed (a resend from
- * the same popup, same clientId), so the next page load does not re-POST a
- * payload of up to ~1.5 MB only for the server to dedupe it.
- */
-function unqueue(clientId: string): void {
-  void withRetryLock(() => {
-    try {
-      const queue = readQueue();
-      const remaining = queue.filter((entry) => entry.payload.clientId !== clientId);
-      if (remaining.length === queue.length) return;
-      if (remaining.length > 0) localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(remaining));
-      else localStorage.removeItem(RETRY_QUEUE_KEY);
-    } catch {
-      // localStorage unavailable — a replay of the queued copy is deduped server-side
-    }
-  });
-}
-
-function tryWriteQueue(queue: RetryEntry[]): boolean {
-  try {
-    localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function hasScreenshot(entry: RetryEntry): boolean {
-  return entry.payload.screenshotDataUrl != null;
-}
-
-/** Replay copy without the screenshot; its region is meaningless without the image. */
-function withoutScreenshot(entry: RetryEntry): RetryEntry {
-  const { screenshotDataUrl: _screenshotDataUrl, screenshotRegion: _screenshotRegion, ...payload } = entry.payload;
-  return { endpoint: entry.endpoint, payload };
-}
-
-function normalizeName(value: string): string {
-  return value.trim();
-}
-
-function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-/**
- * Flush queued feedbacks for `endpoint`. When `currentIdentity` is provided,
- * entries whose stored author doesn't match it are dropped rather than replayed.
- * This prevents user A's offline feedback from being POSTed under user B's
- * identity after a session change. When omitted, all entries are replayed to
- * preserve the legacy behavior for callers that don't track identity.
- *
- * `auth` headers resolve fresh at flush time (once per flush call) — queue
- * entries persist payloads only, never headers or token material.
+ * Replay what the queues hold for `endpoint` (see `flush` in
+ * `offline-queue.ts`) — on load and when the browser comes back online.
+ * Loads the queue's code only when something may be pending. Resolves how
+ * many feedbacks were sent.
  */
 export async function flushRetryQueue(
   endpoint: string,
   currentIdentity?: SitepingIdentity | null,
   auth: ApiClientAuth = {},
-): Promise<void> {
-  await withRetryLock(async () => {
-    try {
-      const queue = readQueue();
-      if (queue.length === 0) return;
-
-      const toRetry: RetryEntry[] = [];
-      const unrelated: RetryEntry[] = [];
-      let dropped = 0;
-
-      for (const entry of queue) {
-        if (entry.endpoint !== endpoint) {
-          unrelated.push(entry);
-          continue;
-        }
-
-        if (
-          !currentIdentity ||
-          (normalizeName(entry.payload.authorName) === normalizeName(currentIdentity.name) &&
-            normalizeEmail(entry.payload.authorEmail) === normalizeEmail(currentIdentity.email))
-        ) {
-          toRetry.push(entry);
-        } else {
-          dropped += 1;
-        }
-      }
-
-      if (toRetry.length === 0 && dropped === 0) return;
-
-      if (dropped > 0) {
-        console.debug("[siteping] flushRetryQueue: dropped", dropped, "stale entries (identity changed)");
-      }
-
-      // Process items sequentially to avoid overwhelming the server
-      const failed: RetryEntry[] = [];
-      let rejected = 0;
-      if (toRetry.length > 0) {
-        const headers = await buildRequestHeaders(auth, true);
-        for (const entry of toRetry) {
-          // Same bound as a live send's attempt: the replay holds the
-          // cross-tab lock, so one that never answers would block every
-          // later queueing on this origin.
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-          try {
-            const res = await fetch(endpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(entry.payload),
-              signal: controller.signal,
-            });
-            if (res.ok) {
-              // Sent from this browser after all: the panel's "Mine" filter lists it
-              const created: unknown = await res.json().catch(() => null);
-              if (hasOwn(created, "id") && typeof created.id === "string") {
-                ownFeedback(entry.payload.projectName, endpoint).add(created.id);
-              }
-              continue;
-            }
-            if (isTransientStatus(res.status)) failed.push(entry);
-            else rejected += 1;
-          } catch {
-            failed.push(entry);
-          } finally {
-            clearTimeout(timeout);
-          }
-        }
-      }
-
-      if (rejected > 0) {
-        console.warn(
-          `[siteping] flushRetryQueue: dropped ${rejected} queued feedback(s) the server rejected (4xx) — they would fail identically on every replay`,
-        );
-      }
-
-      // Rebuild queue: keep unrelated entries + failed retries
-      const remaining = unrelated.concat(failed);
-      if (remaining.length > 0) {
-        localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(remaining));
-      } else {
-        localStorage.removeItem(RETRY_QUEUE_KEY);
-      }
-    } catch {
-      // Ignore — localStorage may be unavailable
-    }
-  });
+): Promise<number> {
+  if (!hasQueuedFeedback()) return 0;
+  const queue = await loadOfflineQueue();
+  for (const [stashedEndpoint, payload, recording] of stash.splice(0)) {
+    await queue.enqueue(stashedEndpoint, payload, recording);
+  }
+  return queue.flush(endpoint, currentIdentity, auth);
 }
 
 // ---------------------------------------------------------------------------
@@ -526,14 +345,30 @@ export class ApiClient implements WidgetClient {
     }
   }
 
-  async sendFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
+  async sendFeedback(payload: FeedbackPayload, recording?: PendingRecording): Promise<FeedbackResponse> {
     const label = "Failed to send feedback";
     // Only put `screenshotRegion` on the wire when a region was actually
     // captured — servers that predate the field would otherwise reject an
     // explicit `screenshotRegion: null` on every legacy capture.
     const { screenshotRegion, ...rest } = payload;
     const wire = { ...rest, annotations: rest.annotations.map(clipRectToAnchor) };
-    const body: FeedbackPayload = screenshotRegion ? { ...wire, screenshotRegion } : wire;
+    let body: FeedbackPayload = screenshotRegion ? { ...wire, screenshotRegion } : wire;
+    if (recording) {
+      try {
+        const { uploadRecording } = await import("./recording-upload.js");
+        const headers = await this.headers(false, "Failed to upload the screen recording");
+        const info = await uploadRecording(this.endpoint, body.projectName, body.clientId, recording, headers);
+        body = { ...body, diagnostics: { ...(body.diagnostics ?? { console: [], network: [] }), recording: info } };
+      } catch (error) {
+        // Offline or the server down: queue the feedback with its video, to
+        // upload both on the replay. Refused (too large…): send it without.
+        if (isTransientFailure(error)) {
+          queueOutcomes.set(error, await queueFailedSend(this.endpoint, body, recording));
+          throw error;
+        }
+        console.warn("[siteping] the screen recording was refused; the feedback is sent without it:", error);
+      }
+    }
     try {
       const created = await resilientFetch(
         this.endpoint,
@@ -542,13 +377,16 @@ export class ApiClient implements WidgetClient {
         parseJsonAs<FeedbackResponse>,
         { boundBody: true },
       );
-      unqueue(body.clientId);
+      // A resend that lands drops the attempt an earlier failure queued.
+      if (hasQueuedFeedback()) void loadOfflineQueue().then((queue) => queue.dequeue(body.clientId));
       return created;
     } catch (error) {
       // Queue the wire shape (region stripped when absent) so a later
       // flushRetryQueue replays exactly what a fresh POST would send — but
       // only when a replay can succeed (see `isTransientFailure`).
-      if (isTransientFailure(error)) queueOutcomes.set(error, await queueForRetry(this.endpoint, body));
+      if (isTransientFailure(error)) {
+        queueOutcomes.set(error, await queueFailedSend(this.endpoint, body));
+      }
       throw error;
     }
   }

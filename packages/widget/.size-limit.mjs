@@ -12,13 +12,13 @@ export default [
   {
     name: "ESM first load (index.js + static chunks)",
     path: firstLoad(dir, "dist/index.js"),
-    limit: "64 KB",
+    limit: "66 KB",
     gzip: true,
   },
   {
     name: "React entry first load (react.js + static imports)",
     path: firstLoad(dir, "dist/react.js"),
-    limit: "64.5 KB",
+    limit: "66.5 KB",
     gzip: true,
   },
   {
@@ -30,13 +30,31 @@ export default [
   {
     name: "Locale dictionaries, all eight summed (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^(de|es|fr|it|ja|ko|pt|ru)-/),
-    limit: "17 KB",
+    limit: "20.5 KB",
+    gzip: true,
+  },
+  {
+    name: "Screenshot editor, on first markup (lazy)",
+    path: lazyLoad(dir, "dist/index.js", /^screenshot-editor-/),
+    limit: "4 KB",
+    gzip: true,
+  },
+  {
+    name: "Screen recorder, on first recording (lazy)",
+    path: lazyLoad(dir, "dist/index.js", /^screen-recorder-/),
+    limit: "3 KB",
+    gzip: true,
+  },
+  {
+    name: "Offline queue, preloaded when idle (lazy)",
+    path: lazyLoad(dir, "dist/index.js", /^offline-queue-/),
+    limit: "4 KB",
     gzip: true,
   },
   {
     name: "IIFE script bundle (index.global.js)",
     path: "dist/index.global.js",
-    limit: "146 KB",
+    limit: "156.5 KB",
     gzip: true,
   },
 ];

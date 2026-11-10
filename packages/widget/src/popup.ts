@@ -73,6 +73,8 @@ export class Popup {
   private typeRow: HTMLElement;
   private submitLabel: HTMLSpanElement;
   private hint: HTMLElement;
+  /** Extra actions under the message — "Mark up screenshot", the attached recording. Hidden while empty. */
+  private toolRow: HTMLElement;
   private resolve: ((result: PopupResult | null) => void) | null = null;
   private previouslyFocused: HTMLElement | null = null;
   /** Removes the focus trap `show()` installs (see `addSurfaceKeydownListener`). */
@@ -239,6 +241,8 @@ export class Popup {
       }
     });
 
+    this.toolRow = el("div", { style: "display:none;flex-wrap:wrap;gap:6px;margin-top:10px;" });
+
     // Button row
     const btnRow = el("div", { style: "display:flex;justify-content:flex-end;gap:8px;margin-top:12px;" });
 
@@ -297,6 +301,7 @@ export class Popup {
     this.root.appendChild(this.typeRow);
     this.root.appendChild(this.textarea);
     this.root.appendChild(this.hint);
+    this.root.appendChild(this.toolRow);
     this.root.appendChild(btnRow);
     isolateFromHost(this.root);
     document.body.appendChild(this.root);
@@ -345,6 +350,36 @@ export class Popup {
     // Target the label <span>, not the button — the button also hosts the
     // submitting-state spinner, which `setText` on the button would erase.
     setText(this.submitLabel, this.t("popup.submit"));
+  }
+
+  /**
+   * Fill the row of extra actions for the next `show()` (an empty list hides
+   * it). Build each with {@link Popup.toolButton}; they freeze with the form
+   * while a submission is in flight.
+   */
+  setTools(tools: readonly HTMLElement[]): void {
+    this.toolRow.replaceChildren(...tools);
+    this.toolRow.style.display = tools.length > 0 ? "flex" : "none";
+  }
+
+  /** A small grey pill for the tool row, styled like the form's own controls. */
+  toolButton(label: string, onClick: () => void): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.style.cssText = /* css */ `
+      height:30px;padding:0 12px;border:none;border-radius:9999px;cursor:pointer;
+      background:${this.colors.surface.fill};color:${this.colors.text};
+      font-family:${SYSTEM_FONT};font-size:13px;font-weight:500;
+      display:inline-flex;align-items:center;gap:6px;max-width:100%;
+      transition:${CONTROL_TRANSITION};
+    `;
+    setText(btn, label);
+    btn.addEventListener("click", () => {
+      if (!this.submittingState) onClick();
+    });
+    pressable(btn);
+    focusRing(btn, this.colors.accent);
+    return btn;
   }
 
   /**
@@ -677,12 +712,20 @@ export class Popup {
     // Textarea + type buttons: read-only
     this.textarea.disabled = true;
     this.textarea.style.opacity = "0.6";
-    const typeButtons = this.typeRow.querySelectorAll<HTMLButtonElement>("button");
+    const typeButtons = this.formButtons();
     for (const btn of typeButtons) {
       btn.disabled = true;
       btn.style.cursor = "not-allowed";
       btn.style.opacity = "0.6";
     }
+  }
+
+  /** The category tiles and the tool row's actions — frozen while a submission is in flight. */
+  private formButtons(): HTMLButtonElement[] {
+    return [
+      ...this.typeRow.querySelectorAll<HTMLButtonElement>("button"),
+      ...this.toolRow.querySelectorAll<HTMLButtonElement>("button"),
+    ];
   }
 
   private exitSubmittingState(): void {
@@ -708,7 +751,7 @@ export class Popup {
     // Textarea + type buttons
     this.textarea.disabled = false;
     this.textarea.style.opacity = "1";
-    const typeButtons = this.typeRow.querySelectorAll<HTMLButtonElement>("button");
+    const typeButtons = this.formButtons();
     for (const btn of typeButtons) {
       btn.disabled = false;
       btn.style.cursor = "pointer";

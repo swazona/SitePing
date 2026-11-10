@@ -56,6 +56,8 @@ const popupMocks = vi.hoisted(() => {
     sheetTop: null as number | null,
     /** Anchor rect passed to the last `show()` call. */
     lastRect: null as DOMRect | null,
+    /** The tool row set before the last `show()`. */
+    tools: [] as HTMLElement[],
   };
 });
 
@@ -98,6 +100,15 @@ vi.mock(new URL("../../src/popup.js", import.meta.url).pathname, () => ({
           popupMocks.isOpenState = false;
           return Promise.resolve(popupMocks.nextResult);
         }),
+      setTools: vi.fn().mockImplementation((tools: HTMLElement[]) => {
+        popupMocks.tools = tools;
+      }),
+      toolButton: vi.fn().mockImplementation((label: string, onClick: () => void) => {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.addEventListener("click", onClick);
+        return button;
+      }),
       destroy: vi.fn().mockImplementation(() => {
         popupMocks.destroyCount += 1;
         popupMocks.isOpenState = false;
@@ -148,6 +159,12 @@ vi.mock(new URL("../../src/dom/anchor.js", import.meta.url).pathname, () => ({
     neighborText: "",
   }),
   rectToPercentages: vi.fn().mockReturnValue({ xPct: 0, yPct: 0, wPct: 1, hPct: 1 }),
+}));
+
+// The screenshot editor is its own chunk; here it answers like a user who drew.
+const editorMocks = vi.hoisted(() => ({ openScreenshotEditor: vi.fn() }));
+vi.mock(new URL("../../src/screenshot-editor.js", import.meta.url).pathname, () => ({
+  openScreenshotEditor: editorMocks.openScreenshotEditor,
 }));
 
 import { Annotator } from "../../src/annotator.js";
@@ -2144,5 +2161,107 @@ describe("Annotator.restyle (an auto theme following the OS)", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(popupMocks.destroyCount).toBe(1);
     expect(Popup).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Annotator — capture tools in the form", () => {
+  const capture = { dataUrl: "data:image/jpeg;base64,CAP", region: { xPct: 0.1, yPct: 0.1, wPct: 0.5, hPct: 0.5 } };
+  let annotator: Annotator;
+  let bus: EventBus<WidgetEvents>;
+
+  function draw(): void {
+    const overlay = findOverlay()!;
+    overlay.dispatchEvent(new MouseEvent("mousedown", { clientX: 50, clientY: 50, bubbles: true }));
+    overlay.dispatchEvent(new MouseEvent("mouseup", { clientX: 200, clientY: 150, bubbles: true }));
+  }
+
+  beforeEach(() => {
+    popupMocks.nextResult = null; // the form stays open until the test submits
+    popupMocks.keepShowPending = true;
+    popupMocks.capturedOnSubmit = null;
+    popupMocks.tools = [];
+    screenshotMocks.captureAnnotatedScreenshot.mockReset();
+    screenshotMocks.captureAnnotatedScreenshot.mockResolvedValue(capture);
+    editorMocks.openScreenshotEditor.mockReset();
+    bus = new EventBus<WidgetEvents>();
+  });
+
+  afterEach(() => {
+    annotator.destroy();
+    for (const el of document.body.querySelectorAll("div[data-siteping-ignore]")) el.remove();
+  });
+
+  it("offers Mark up screenshot, and sends the edited image in place of the capture", async () => {
+    editorMocks.openScreenshotEditor.mockResolvedValue("data:image/jpeg;base64,EDITED");
+    annotator = new Annotator(colors, bus, t, true);
+    const complete = vi.fn();
+    bus.on("annotation:complete", complete);
+
+    bus.emit("annotation:start");
+    draw();
+    await vi.waitFor(() => expect(popupMocks.tools).toHaveLength(1));
+    const markup = popupMocks.tools[0] as HTMLButtonElement;
+    expect(markup.textContent).toBe(t("popup.markup"));
+
+    markup.click();
+    await vi.waitFor(() => expect(markup.getAttribute("aria-pressed")).toBe("true"));
+    expect(editorMocks.openScreenshotEditor).toHaveBeenCalledWith(
+      expect.objectContaining({ dataUrl: "data:image/jpeg;base64,CAP" }),
+    );
+    expect(markup.textContent).toBe(t("popup.markupDone"));
+
+    void popupMocks.capturedOnSubmit?.({ type: "bug", message: "x" }).catch(() => {});
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({
+      screenshotDataUrl: "data:image/jpeg;base64,EDITED",
+      screenshotRegion: capture.region,
+    });
+    // One capture: the editor's, reused by the send.
+    expect(screenshotMocks.captureAnnotatedScreenshot).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the capture when the editor is cancelled", async () => {
+    editorMocks.openScreenshotEditor.mockResolvedValue(null);
+    annotator = new Annotator(colors, bus, t, true);
+    const complete = vi.fn();
+    bus.on("annotation:complete", complete);
+    bus.emit("annotation:start");
+    draw();
+    await vi.waitFor(() => expect(popupMocks.tools).toHaveLength(1));
+    (popupMocks.tools[0] as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(editorMocks.openScreenshotEditor).toHaveBeenCalledOnce());
+
+    void popupMocks.capturedOnSubmit?.({ type: "bug", message: "x" }).catch(() => {});
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    expect(complete.mock.calls[0]?.[0].screenshotDataUrl).toBe(capture.dataUrl);
+  });
+
+  it("has no tool without screenshots, or with screenshotEditor: false", async () => {
+    annotator = new Annotator(colors, bus, t, true, undefined, { screenshotEditor: false });
+    bus.emit("annotation:start");
+    draw();
+    await vi.waitFor(() => expect(popupMocks.capturedOnSubmit).not.toBeNull());
+    expect(popupMocks.tools).toEqual([]);
+  });
+
+  it("adds the host's form attachment to the tool row", async () => {
+    const chip = document.createElement("button");
+    annotator = new Annotator(colors, bus, t, false, undefined, { formAttachment: () => chip });
+    bus.emit("annotation:start");
+    draw();
+    await vi.waitFor(() => expect(popupMocks.tools).toEqual([chip]));
+  });
+
+  it("hands the launcher the annotated element, for its React component path", async () => {
+    annotator = new Annotator(colors, bus, t);
+    const complete = vi.fn();
+    bus.on("annotation:complete", complete);
+    bus.emit("annotation:start");
+    draw();
+    await vi.waitFor(() => expect(popupMocks.capturedOnSubmit).not.toBeNull());
+    void popupMocks.capturedOnSubmit?.({ type: "bug", message: "x" }).catch(() => {});
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    // findAnchorElement is mocked to document.body.
+    expect(complete.mock.calls[0]?.[0].element).toBe(document.body);
   });
 });

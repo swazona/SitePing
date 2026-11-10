@@ -25,6 +25,7 @@ const mockQueueOutcome = vi.fn<(error: unknown) => boolean | undefined>();
 
 vi.mock(new URL("../../src/api-client.js", import.meta.url).pathname, () => ({
   queueOutcome: (error: unknown) => mockQueueOutcome(error),
+  preloadOfflineQueue: vi.fn(),
   ApiClient: vi.fn(function (this: unknown) {
     return {
       sendFeedback: mockSendFeedback,
@@ -378,7 +379,7 @@ describe("launcher — annotation:complete integration", () => {
       // Queued first: the annotator settles the popup as on success before the error.
       expect(order).toEqual(["queued", "error"]);
       expect(onError).toHaveBeenCalledOnce();
-      expect(toast().textContent).toBe("Saved on this device. It will be sent on your next visit.");
+      expect(toast().textContent).toBe("Saved on this device. It will be sent when you are back online.");
       expect(toast().classList.contains("sp-toast--error")).toBe(false);
     });
 

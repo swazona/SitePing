@@ -9,7 +9,11 @@ import {
 } from "@siteping/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient, flushRetryQueue, queueOutcome } from "../../src/api-client.js";
+import { _resetOfflineQueueForTests } from "../../src/offline-queue.js";
 import { ownFeedback } from "../../src/own-feedback.js";
+
+// The memory tier of the offline queue outlives a test: start each one empty.
+afterEach(() => _resetOfflineQueueForTests());
 
 /** Burn through resilientFetch's three backoffs (1s + 2s + 4s, ±500ms jitter) under fake timers. */
 async function drainRetryBackoff(): Promise<void> {
@@ -358,7 +362,7 @@ describe("ApiClient", () => {
     vi.unstubAllGlobals();
   });
 
-  it("leaves the stored queue untouched and warns when not even the stripped newest entry fits", async () => {
+  it("leaves the stored queue untouched and keeps the feedback in memory when not even the stripped newest entry fits", async () => {
     const store = stubLocalStorage(10); // no queue write can fit
     const previous = JSON.stringify([
       { endpoint, payload: { ...basePayload, message: "previous", clientId: "cid-0" } },
@@ -370,7 +374,7 @@ describe("ApiClient", () => {
 
     expect(store.get("siteping_retry_queue")).toBe(previous);
     expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "[siteping] feedback could not be queued for retry — localStorage is full or unavailable",
+      "[siteping] feedback could not be queued in localStorage — keeping it for this page only",
     );
 
     vi.unstubAllGlobals();
@@ -393,8 +397,9 @@ describe("ApiClient", () => {
       stubLocalStorage();
       expect(queueOutcome(await sendOffline("cid-saved"))).toBe(true);
 
-      stubLocalStorage(10); // no queue write can fit
-      expect(queueOutcome(await sendOffline("cid-unsaved"))).toBe(false);
+      // No queue write can fit: kept in memory, replayed on `online` during this page's life.
+      stubLocalStorage(10);
+      expect(queueOutcome(await sendOffline("cid-in-memory"))).toBe(true);
 
       vi.mocked(fetch).mockResolvedValue(new Response("Bad Request", { status: 400 }));
       expect(queueOutcome(await client.sendFeedback(basePayload).catch((e: unknown) => e))).toBeUndefined();
@@ -1735,7 +1740,7 @@ describe("flushRetryQueue", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     // Should not throw
-    await expect(flushRetryQueue(endpoint)).resolves.toBeUndefined();
+    await expect(flushRetryQueue(endpoint)).resolves.toBe(0);
     expect(fetch).not.toHaveBeenCalled();
     expect(localStorage.removeItem).toHaveBeenCalledWith("siteping_retry_queue");
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -1744,7 +1749,7 @@ describe("flushRetryQueue", () => {
   it("treats non-array stored value as empty queue (flushRetryQueue)", async () => {
     vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ not: "an array" }));
 
-    await expect(flushRetryQueue(endpoint)).resolves.toBeUndefined();
+    await expect(flushRetryQueue(endpoint)).resolves.toBe(0);
     expect(fetch).not.toHaveBeenCalled();
   });
 

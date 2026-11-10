@@ -90,6 +90,8 @@ export interface WidgetEvents {
    */
   "panel:action-error": [Error];
   "annotations:toggle": [boolean];
+  /** Internal-only: "Record screen" was picked in the FAB menu. */
+  "recording:start": [];
   "panel:toggle": [boolean];
 }
 

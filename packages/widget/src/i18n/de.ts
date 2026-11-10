@@ -59,6 +59,7 @@ export const de: Translations = {
   "fab.aria": "Siteping — Feedback-Menü",
   "fab.messages": "Seitenleiste anzeigen",
   "fab.annotate": "Neue Anmerkung erstellen",
+  "fab.record": "Bildschirm aufnehmen",
   "fab.annotations": "Markierungen ein- oder ausblenden",
 
   // Annotator
@@ -76,6 +77,20 @@ export const de: Translations = {
   "popup.submitHintOther": "Strg+Enter zum Senden",
   "popup.cancel": "Abbrechen",
   "popup.submit": "Senden",
+  "popup.markup": "Screenshot markieren",
+  "popup.markupDone": "Screenshot markiert",
+  "popup.recording": "Aufnahme ({duration})",
+  "popup.recordingRemove": "Aufnahme entfernen",
+  "editor.title": "Screenshot markieren",
+  "editor.pen": "Stift",
+  "editor.arrow": "Pfeil",
+  "editor.rect": "Hervorheben",
+  "editor.blur": "Schwärzen",
+  "editor.undo": "Rückgängig",
+  "editor.cancel": "Abbrechen",
+  "editor.done": "Fertig",
+  "editor.canvasAria":
+    "Screenshot. Ziehen, um mit dem gewählten Werkzeug zu zeichnen. Tastatur: Pfeiltasten bewegen, Eingabe beginnt und beendet eine Form.",
 
   // Identity modal
   "identity.title": "Identifiziere dich",
@@ -97,7 +112,11 @@ export const de: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Feedback erfolgreich gesendet",
   "feedback.error.message": "Feedback konnte nicht gesendet werden",
-  "feedback.queued": "Auf diesem Gerät gespeichert. Wird beim nächsten Besuch gesendet.",
+  "feedback.queued": "Auf diesem Gerät gespeichert. Wird gesendet, sobald du wieder online bist.",
+  "record.stop": "Aufnahme beenden",
+  "record.status": "Aufnahme {time}",
+  "record.failed": "Bildschirmaufnahme fehlgeschlagen",
+  "record.uploadFailed": "Die Aufnahme konnte nicht hochgeladen werden; das Feedback wurde ohne sie gesendet.",
   "feedback.deleted.confirmation": "Feedback gelöscht",
 
   // Badge

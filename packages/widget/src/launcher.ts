@@ -12,7 +12,7 @@ import {
   type SitepingPublicEvents,
 } from "@siteping/core";
 import { Annotator } from "./annotator.js";
-import { ApiClient, flushRetryQueue, queueOutcome, type WidgetClient } from "./api-client.js";
+import { ApiClient, flushRetryQueue, preloadOfflineQueue, queueOutcome, type WidgetClient } from "./api-client.js";
 import { DEFAULT_MIN_VIEWPORT_WIDTH, PAGE_SIZE, Z_INDEX_MAX } from "./constants.js";
 import { ConsoleBuffer } from "./diagnostics/console-buffer.js";
 import { NetworkBuffer } from "./diagnostics/network-buffer.js";
@@ -30,9 +30,11 @@ import { getIdentity, saveIdentity } from "./identity.js";
 import { MarkerManager } from "./markers.js";
 import { ownFeedback } from "./own-feedback.js";
 import type { Panel as PanelType } from "./panel.js";
+import type { PendingRecording } from "./recording-upload.js";
 import { StoreClient } from "./store-client.js";
 import { buildStyles } from "./styles/base.js";
 import { buildThemeColors, watchColorScheme } from "./styles/theme.js";
+import { surfaceKit } from "./surface-kit.js";
 import { Tooltip } from "./tooltip.js";
 import { trackKeyboardInset } from "./viewport.js";
 
@@ -45,6 +47,8 @@ let acquire: (() => SitepingInstance) | null = null;
 interface NormalisedDiagnostics {
   console: boolean;
   network: boolean;
+  /** React component path of the annotated element (`DiagnosticsSnapshot.components`). */
+  components: boolean;
   maxConsoleEntries: number;
   maxNetworkEntries: number;
 }
@@ -61,17 +65,42 @@ interface NormalisedDiagnostics {
  */
 function normaliseDiagnosticsOptions(value: SitepingConfig["captureDiagnostics"]): NormalisedDiagnostics {
   if (value === undefined || value === false) {
-    return { console: false, network: false, maxConsoleEntries: 50, maxNetworkEntries: 20 };
+    return { console: false, network: false, components: false, maxConsoleEntries: 50, maxNetworkEntries: 20 };
   }
   if (value === true) {
-    return { console: true, network: true, maxConsoleEntries: 50, maxNetworkEntries: 20 };
+    return { console: true, network: true, components: true, maxConsoleEntries: 50, maxNetworkEntries: 20 };
   }
   return {
     console: value.console !== false,
     network: value.network !== false,
+    components: value.components !== false,
     maxConsoleEntries: typeof value.maxConsoleEntries === "number" ? value.maxConsoleEntries : 50,
     maxNetworkEntries: typeof value.maxNetworkEntries === "number" ? value.maxNetworkEntries : 20,
   };
+}
+
+/** Default `enableScreenRecording` limits: one minute, 8 MiB. */
+const DEFAULT_RECORDING_MS = 60_000;
+const DEFAULT_RECORDING_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Resolve `enableScreenRecording` to its limits, or `null` when recording is
+ * off, impossible here (no endpoint to upload to; a browser without
+ * `getDisplayMedia` or `MediaRecorder`, such as iOS Safari), or misconfigured.
+ */
+function normaliseRecordingOptions(config: SitepingConfig): { maxDurationMs: number; maxBytes: number } | null {
+  const value = config.enableScreenRecording;
+  if (!value || !config.endpoint) return null;
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function" || typeof MediaRecorder === "undefined")
+    return null;
+  const positive = (n: unknown, fallback: number) =>
+    typeof n === "number" && n > 0 && Number.isFinite(n) ? n : fallback;
+  return value === true
+    ? { maxDurationMs: DEFAULT_RECORDING_MS, maxBytes: DEFAULT_RECORDING_BYTES }
+    : {
+        maxDurationMs: positive(value.maxDurationMs, DEFAULT_RECORDING_MS),
+        maxBytes: positive(value.maxBytes, DEFAULT_RECORDING_BYTES),
+      };
 }
 
 /** Build a no-op SitepingInstance for when the widget is skipped */
@@ -517,8 +546,59 @@ export function launch(config: SitepingConfig): SitepingInstance {
     }
   });
 
-  const annotator = new Annotator(colors, bus, t, config.enableScreenshot ?? false, () =>
-    focusTracker.getLastPageFocus(),
+  // Screen recording: offered once the endpoint advertises `capabilities.recordings`.
+  // A finished recording waits here for the next feedback (see `formAttachment`).
+  const recordingOpts = normaliseRecordingOptions(config);
+  let pendingRecording: PendingRecording | null = null;
+  let recorder: typeof import("./screen-recorder.js") | null = null;
+  let recordingInProgress = false;
+  const offerRecording = (list: { capabilities?: { recordings?: boolean | undefined } | undefined }) => {
+    if (recordingOpts && !destroyed) fab.setRecordAvailable(list.capabilities?.recordings === true);
+  };
+  const unsubRecording = bus.on("recording:start", () => {
+    if (!recordingOpts || recordingInProgress || annotator.isBusy) return;
+    recordingInProgress = true;
+    import("./screen-recorder.js")
+      .then((module) => {
+        recorder = module;
+        return module.recordScreen({ ...recordingOpts, colors, t, kit: surfaceKit });
+      })
+      .then((recording) => {
+        if (!recording || destroyed) return;
+        pendingRecording = recording;
+        // Now point at what the recording is about.
+        bus.emit("annotation:start");
+      })
+      .catch((err) => {
+        log("screen recording failed:", err);
+        notify(t("record.failed"), true);
+      })
+      .finally(() => {
+        recordingInProgress = false;
+      });
+  });
+
+  const annotator: Annotator = new Annotator(
+    colors,
+    bus,
+    t,
+    config.enableScreenshot ?? false,
+    () => focusTracker.getLastPageFocus(),
+    {
+      screenshotEditor: config.screenshotEditor,
+      formAttachment: (): HTMLElement | null => {
+        const recording = pendingRecording;
+        if (!recording || !recorder) return null;
+        // The chip names the recording; activating it detaches it from the feedback.
+        const label = recorder.recordingLabel(t, recording.durationMs);
+        const chip: HTMLButtonElement = annotator.toolButton(`${label} ✕`, () => {
+          pendingRecording = null;
+          chip.remove();
+        });
+        chip.setAttribute("aria-label", `${label} — ${t("popup.recordingRemove")}`);
+        return chip;
+      },
+    },
   );
 
   let onContextMenu: ((e: MouseEvent) => void) | null = null;
@@ -591,7 +671,7 @@ export function launch(config: SitepingConfig): SitepingInstance {
     }
     submitting = true;
     try {
-      const { annotation, type, message, clientId, screenshotDataUrl, screenshotRegion } = data;
+      const { annotation, type, message, clientId, screenshotDataUrl, screenshotRegion, element } = data;
 
       const identity = await resolveIdentity(true);
       if (!identity) {
@@ -615,10 +695,19 @@ export function launch(config: SitepingConfig): SitepingInstance {
       // Snapshot the buffers right before submit so the captured slice
       // matches the moment the user clicked "send", not some earlier point.
       let diagnostics: DiagnosticsSnapshot | null = null;
-      if (consoleBuffer || networkBuffer) {
+      // The React component path: its reader is a chunk of its own, loaded only to send one.
+      const componentPath =
+        diagnosticsOpts.components && element
+          ? await import("./dom/react-path.js").then(
+              (module) => module.reactComponentPath(element),
+              () => null,
+            )
+          : null;
+      if (consoleBuffer || networkBuffer || componentPath) {
         diagnostics = {
           console: consoleBuffer?.getEntries() ?? [],
           network: networkBuffer?.getEntries() ?? [],
+          ...(componentPath ? { components: componentPath } : {}),
         };
       }
 
@@ -639,8 +728,10 @@ export function launch(config: SitepingConfig): SitepingInstance {
         diagnostics,
       };
 
+      const recording = pendingRecording;
       try {
-        const response = await client.sendFeedback(payload);
+        const response = recording ? await client.sendFeedback(payload, recording) : await client.sendFeedback(payload);
+        if (recording === pendingRecording) pendingRecording = null;
         bus.emit("feedback:sent", response);
         // Compare against the scope captured before submit (route may have
         // changed during the network round-trip — re-reading scope here
@@ -648,7 +739,10 @@ export function launch(config: SitepingConfig): SitepingInstance {
         if (!scopeAnnotationsByUrl || response.url === scope.url) {
           markers.addFeedback(response, markers.count + 1);
         }
-        notify(t("feedback.sent.confirmation"), false);
+        notify(
+          t(recording && !response.diagnostics?.recording ? "record.uploadFailed" : "feedback.sent.confirmation"),
+          false,
+        );
         // Only refresh the panel if it has been loaded — `refresh()` is a
         // no-op when the panel is closed, so skipping the dynamic import here
         // avoids loading 14 KB of code that would otherwise do nothing.
@@ -659,6 +753,8 @@ export function launch(config: SitepingConfig): SitepingInstance {
         // and the host still hears about the failure. Otherwise — refused,
         // or not even saved — the form stays for a retry.
         const queued = queueOutcome(error);
+        // Queued with the feedback (see `ApiClient.sendFeedback`).
+        if (queued && recording === pendingRecording) pendingRecording = null;
         if (queued) bus.emit("feedback:queued");
         bus.emit("feedback:error", error instanceof Error ? error : new Error(String(error)));
         notify(t(queued ? "feedback.queued" : "feedback.error.message"), !queued);
@@ -684,7 +780,9 @@ export function launch(config: SitepingConfig): SitepingInstance {
   // this `Promise.all`, a fast HTTP response could outrun a slow locale chunk
   // and freeze marker labels in the English fallback for non-English locales.
   Promise.all([client.getFeedbacks(config.projectName, initialOptions), localeReady])
-    .then(([{ feedbacks }]) => {
+    .then(([list]) => {
+      offerRecording(list);
+      const { feedbacks } = list;
       if (destroyed || markerGeneration !== initialLoadGeneration) return;
       // Defensive client-side filter — backend may not yet support the `url` query.
       const visible = scopeAnnotationsByUrl ? feedbacks.filter((f) => f.url === initialScope.url) : feedbacks;
@@ -721,14 +819,31 @@ export function launch(config: SitepingConfig): SitepingInstance {
       log("Failed to load initial markers:", err);
     });
 
-  // Flush retry queue on load (HTTP mode only — store mode has no retry queue)
+  // Replay the offline queue on load and whenever the browser comes back
+  // online (HTTP mode only — store mode has no retry queue). Feedbacks it
+  // sends join the page's pins through a refresh.
+  let onOnline: (() => void) | null = null;
   if (config.endpoint) {
-    flushRetryQueue(config.endpoint, config.identity ?? getIdentity(), {
-      apiKey: config.apiKey,
-      headers: config.headers,
-    })
-      .then(() => log("Retry queue flushed"))
-      .catch(() => {});
+    const endpoint = config.endpoint;
+    onOnline = () => {
+      flushRetryQueue(endpoint, config.identity ?? getIdentity(), {
+        apiKey: config.apiKey,
+        headers: config.headers,
+      })
+        .then((sent) => {
+          log("Retry queue flushed", sent);
+          if (sent > 0 && !destroyed) {
+            notify(t("feedback.sent.confirmation"), false);
+            void doRefresh().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+    onOnline();
+    window.addEventListener("online", onOnline);
+    // Fetch the queue's code while there is a network to fetch it with.
+    if (typeof requestIdleCallback === "function") requestIdleCallback(preloadOfflineQueue);
+    else setTimeout(preloadOfflineQueue, 200);
   }
 
   // Re-fetch feedbacks for the *current* scope and update the UI. Shared by the
@@ -752,7 +867,9 @@ export function launch(config: SitepingConfig): SitepingInstance {
     }
     const scope = getScope();
     const opts = scopeAnnotationsByUrl ? { limit: PAGE_SIZE, url: scope.url } : { limit: PAGE_SIZE };
-    return client.getFeedbacks(config.projectName, opts).then(({ feedbacks }) => {
+    return client.getFeedbacks(config.projectName, opts).then((list) => {
+      offerRecording(list);
+      const { feedbacks } = list;
       // Drop the result if a newer refresh superseded us (out-of-order
       // resolution), the widget was torn down, or the panel opened mid-flight
       // and now owns marker rendering itself.
@@ -850,6 +967,8 @@ export function launch(config: SitepingConfig): SitepingInstance {
       focusTracker.destroy();
       unsubAnnotation();
       unsubToggle();
+      unsubRecording();
+      if (onOnline) window.removeEventListener("online", onOnline);
       fab.destroy();
       panelInstance?.destroy();
       annotator.destroy();

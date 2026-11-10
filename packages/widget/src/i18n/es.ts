@@ -59,6 +59,7 @@ export const es: Translations = {
   "fab.aria": "Siteping — Menú de comentarios",
   "fab.messages": "Mostrar barra lateral",
   "fab.annotate": "Crear nueva anotación",
+  "fab.record": "Grabar pantalla",
   "fab.annotations": "Mostrar u ocultar marcadores",
 
   // Annotator
@@ -76,6 +77,20 @@ export const es: Translations = {
   "popup.submitHintOther": "Ctrl+Enter para enviar",
   "popup.cancel": "Cancelar",
   "popup.submit": "Enviar",
+  "popup.markup": "Marcar la captura",
+  "popup.markupDone": "Captura marcada",
+  "popup.recording": "Grabación ({duration})",
+  "popup.recordingRemove": "Quitar la grabación",
+  "editor.title": "Marcar la captura",
+  "editor.pen": "Lápiz",
+  "editor.arrow": "Flecha",
+  "editor.rect": "Resaltar",
+  "editor.blur": "Ocultar",
+  "editor.undo": "Deshacer",
+  "editor.cancel": "Cancelar",
+  "editor.done": "Listo",
+  "editor.canvasAria":
+    "Captura de pantalla. Arrastra para dibujar con la herramienta elegida. Con el teclado: las flechas mueven, Intro empieza y termina una forma.",
 
   // Identity modal
   "identity.title": "Identifícate",
@@ -97,7 +112,11 @@ export const es: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Comentario enviado correctamente",
   "feedback.error.message": "No se pudo enviar el comentario",
-  "feedback.queued": "Guardado en este dispositivo. Se enviará en tu próxima visita.",
+  "feedback.queued": "Guardado en este dispositivo. Se enviará cuando vuelvas a tener conexión.",
+  "record.stop": "Detener la grabación",
+  "record.status": "Grabando {time}",
+  "record.failed": "La grabación de pantalla falló",
+  "record.uploadFailed": "No se pudo subir la grabación; el comentario se envió sin ella.",
   "feedback.deleted.confirmation": "Comentario eliminado",
 
   // Badge

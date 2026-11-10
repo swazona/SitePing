@@ -248,3 +248,25 @@ describe("types used in public signatures are exported", () => {
     expectTypeOf(initSiteping).toBeCallableWith({ projectName: "p", store, onSkip: undefined });
   });
 });
+
+describe("capture options", () => {
+  it("takes the screenshot editor, screen recording and component-path switches, all optional", () => {
+    initSiteping({
+      endpoint: "/api/siteping",
+      projectName: "p",
+      enableScreenshot: true,
+      screenshotEditor: false,
+      enableScreenRecording: { maxDurationMs: 30_000, maxBytes: 4_000_000 },
+      captureDiagnostics: { components: false },
+    });
+    initSiteping({ endpoint: "/api/siteping", projectName: "p", enableScreenRecording: true });
+    // @ts-expect-error — a duration is a number of milliseconds
+    initSiteping({ endpoint: "/api/siteping", projectName: "p", enableScreenRecording: { maxDurationMs: "1m" } });
+    expectTypeOf<Widget.ScreenRecordingOptions>().toEqualTypeOf<{
+      maxDurationMs?: number | undefined;
+      maxBytes?: number | undefined;
+    }>();
+    expectTypeOf<NonNullable<DiagnosticsSnapshot["recording"]>>().toEqualTypeOf<Widget.RecordingInfo>();
+    expectTypeOf<DiagnosticsSnapshot["components"]>().toEqualTypeOf<string[] | undefined>();
+  });
+});
