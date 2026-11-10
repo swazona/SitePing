@@ -170,13 +170,14 @@ const store: SitepingRateLimitStore = {
 | `recordingStorage` | `RecordingStorage` | — | Où vont les [enregistrements d'écran](/fr/docs/widget/recording). Avec lui, les réponses de liste annoncent `capabilities.recordings` et l'endpoint accepte les envois d'enregistrement ; sans lui, le widget ne propose jamais « Enregistrer l'écran » |
 | `maxRecordingBytes` | `number` | 16 Mio | Taille maximale d'un enregistrement envoyé, en octets. Au-delà, la réponse est un `413`, avant tout stockage |
 | `webhooks` | `WebhookConfig \| WebhookConfig[]` | — | Déclenchés à chaque nouveau feedback, et aux [événements](#événements) que chacun choisit — voir [webhooks](#webhooks) |
-| `waitUntil` | `(promise) => void` | — | Garde les envois de webhooks en vie après la réponse sur les runtimes serverless et edge — voir [webhooks](#webhooks) |
+| `waitUntil` | `(promise) => void` | — | Garde les envois de webhooks et `notifyTeam` en vie après la réponse sur les runtimes serverless et edge — voir [webhooks](#webhooks) |
 | `beforeCreate` | `(input, context) => input` | — | Réécrire un envoi avant son enregistrement — voir [points d'extension](#points-dextension) |
 | `beforeRecordingUpload` | `(input, context) => target` | — | Imposer ou refuser le projet d'un [envoi d'enregistrement](/fr/docs/widget/recording#comment-un-enregistrement-arrive-au-stockage) avant son autorisation et son stockage ; obligatoire avec `beforeCreate` et `recordingStorage` |
 | `beforeComment` | `(input, context) => input` | — | La même chose pour une réponse d'un [fil](/fr/docs/comments) |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transformer chaque enregistrement avant son envoi |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
 | `notifyReporter` | `(feedback, event, context) => void` | — | Prévenir l'auteur d'un feedback qu'il a été résolu ou rouvert, ou que l'équipe a répondu — voir [prévenir l'auteur](#prévenir-lauteur) |
+| `notifyTeam` | `(feedback, event, context) => void` | — | Prévenir l'équipe d'un nouveau feedback, d'un changement de statut ou d'une réponse, sans retenir la requête — voir [prévenir l'équipe](#prévenir-léquipe) |
 | `rateLimit` | `SitepingRateLimitOptions` | — | Limites par client qui répondent `429` — voir [limitation de débit](#limitation-de-débit) |
 | `logger` | `{ error(message, context) }` | `console.error` | Où vont les échecs inattendus, avec la méthode et le chemin de la requête — et pour un hook en échec, le feedback ou la suppression qu'il concerne. Les échecs de webhook vont plutôt à leur propre [`onError`](#webhooks). Un logger qui lève ou rejette se rabat sur `console.error`. C'est un `SitepingLogger` : le même objet, doté aussi d'une méthode `warn` (`console`, winston…), sert les stores et les stockages de captures, qui signalent les cas dégradés via `warn` |
 | `describeError` | `(error) => string \| undefined` | — | Le message d'une `500` au lieu de `"Internal server error"`, par exemple une indication « lancez vos migrations ». Ne renvoyez jamais les détails de l'erreur elle-même |
@@ -207,6 +208,7 @@ createSitepingHandler({
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` sans `apiKey`, `access` ni `requireAuthForDestructive: false` |
 | `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` sans `ipHeader` ni `key`, ou un `limit` ou `windowMs` qui n'est pas un entier positif |
 | `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` sur un store à fils qui n'implémente pas `addCommentIfAbsent` |
+| `CONFIG_NOTIFY_TEAM_UNSUPPORTED` | `notifyTeam` sur un store à fils qui n'implémente pas `addCommentIfAbsent` |
 | `CONFIG_RECORDING_UPLOAD_HOOK_MISSING` | `beforeCreate` avec un `recordingStorage` mais sans `beforeRecordingUpload` : les envois seraient autorisés sur le `?projectName=` du navigateur |
 
 ## Le modèle de sécurité, franchement
@@ -673,6 +675,32 @@ createSitepingHandler({
 - **Les réponses demandent `addCommentIfAbsent`.** Un store à fils incapable de distinguer une nouvelle réponse d'un renvoi enverrait un e-mail à chaque renvoi : le handler refuse de démarrer (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Tous les stores fournis l'implémentent.
 - **Synchronisations depuis un tracker.** Un statut changé depuis GitHub, Linear, Jira ou Plane par les [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) ne passe pas par le handler : passez la même fonction à leur `onStatusSynced`.
 - **Adresses usurpées.** `authorEmail` est ce que le widget a envoyé, saisi par des visiteurs anonymes. Quoi que vous y envoyiez, c'est le visiteur qui a choisi le destinataire : limitez le contenu à son propre feedback, jamais à ce qu'un autre relecteur a écrit et qu'il ne pouvait pas déjà voir.
+
+### Prévenir l'équipe
+
+`notifyTeam(feedback, event, context)` est le pendant de `notifyReporter` côté équipe. Il est appelé une fois par feedback enregistré (`{ type: "created" }`, jamais pour un `clientId` rejoué), à chaque changement de statut qui en ferme ou en rouvre un (`resolved` et `reopened`, décidés exactement comme pour `notifyReporter`), et une fois par nouvelle réponse, quel qu'en soit l'auteur (`{ type: "replied", comment }` : distinguez les réponses de l'auteur de celles de l'équipe par `comment.authorRole`). Il reçoit l'enregistrement stocké, `authorEmail` compris.
+
+[`@siteping/integration-notify`](/fr/docs/notifications) le construit pour Slack, Telegram, WhatsApp, l'e-mail et les webhooks signés :
+
+```ts
+import { createTeamNotifier } from "@siteping/integration-notify";
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  waitUntil: after,
+  notifyTeam: createTeamNotifier({
+    siteUrl: "https://acme.com",
+    channels: [createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! })],
+  }),
+});
+```
+
+- **Jamais attendu.** Contrairement à `notifyReporter`, il tourne en arrière-plan, comme les [webhooks](#webhooks) : sa promesse est confiée à `waitUntil` si vous en passez un, et la réponse part aussitôt. Une exception ou un rejet est journalisé sous `[siteping] Hook notifyTeam failed` et n'atteint jamais la requête. Le feedback d'une réponse est lui aussi cherché en arrière-plan.
+- **Non défini, rien ne change.** Sans lui (et sans `notifyReporter`), un PATCH ne lit pas le statut précédent.
+- **Les réponses exigent `addCommentIfAbsent`**, pour la même raison que ci-dessus (`CONFIG_NOTIFY_TEAM_UNSUPPORTED`).
+- **Les synchronisations de tracker** ne passent pas par le handler : appelez-le depuis le `onStatusSynced` des [webhooks des trackers](/fr/docs/issue-trackers#synchronisation-dans-les-deux-sens) — voir [l'exemple](/fr/docs/notifications#latence-et-échecs).
 
 ## Référence HTTP
 

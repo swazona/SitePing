@@ -170,13 +170,14 @@ const store: SitepingRateLimitStore = {
 | `recordingStorage` | `RecordingStorage` | — | Where [screen recordings](/docs/widget/recording) go. With it, list responses advertise `capabilities.recordings` and the endpoint takes recording uploads; without it, the widget never offers "Record screen" |
 | `maxRecordingBytes` | `number` | 16 MiB | Largest recording upload, in bytes. A longer one answers `413` before it is stored |
 | `webhooks` | `WebhookConfig \| WebhookConfig[]` | — | Fire on each new feedback, and on the [events](#events) each one opts into — see [webhooks](#webhooks) |
-| `waitUntil` | `(promise) => void` | — | Keeps webhook deliveries alive after the response on serverless and edge runtimes — see [webhooks](#webhooks) |
+| `waitUntil` | `(promise) => void` | — | Keeps webhook deliveries and `notifyTeam` alive after the response on serverless and edge runtimes — see [webhooks](#webhooks) |
 | `beforeCreate` | `(input, context) => input` | — | Rewrite a submission before it is stored — see [extension points](#extension-points) |
 | `beforeRecordingUpload` | `(input, context) => target` | — | Pin or refuse a [recording upload](/docs/widget/recording#how-a-recording-reaches-storage)'s project before it is authorized and stored; required with `beforeCreate` and `recordingStorage` |
 | `beforeComment` | `(input, context) => input` | — | The same for a [thread](/docs/comments) reply |
 | `presentFeedback` | `(feedback, context) => feedback` | — | Transform each record before it is sent |
 | `hooks` | `SitepingLifecycleHooks` | — | `onCreated`, `onUpdated`, `onDeleting`, `onDeleted`, `onCommentCreated` |
 | `notifyReporter` | `(feedback, event, context) => void` | — | Tell a feedback's reporter that it was resolved or reopened, or that the team replied — see [notifying the reporter](#notifying-the-reporter) |
+| `notifyTeam` | `(feedback, event, context) => void` | — | Tell the team about a new feedback, a status change or a reply, without holding the request — see [notifying the team](#notifying-the-team) |
 | `rateLimit` | `SitepingRateLimitOptions` | — | Per-client limits answering `429` — see [rate limiting](#rate-limiting) |
 | `logger` | `{ error(message, context) }` | `console.error` | Where unexpected failures go, with the request's method and path — and for a failed hook, the feedback or deletion it concerns. Webhook failures go to their own [`onError`](#webhooks) instead. A logger that throws or rejects falls back to `console.error`. It is a `SitepingLogger`: the same object, with a `warn` method too (`console`, winston…), serves the stores and screenshot storages, which report degraded cases through `warn` |
 | `describeError` | `(error) => string \| undefined` | — | The message of a `500` instead of `"Internal server error"`, e.g. a "run your migrations" hint. Never return the error's own details |
@@ -207,6 +208,7 @@ createSitepingHandler({
 | `CONFIG_API_KEY_REQUIRED` | `NODE_ENV=production` without `apiKey`, `access` or `requireAuthForDestructive: false` |
 | `CONFIG_RATE_LIMIT_INVALID` | `rateLimit` without `ipHeader` or `key`, or a `limit` or `windowMs` that is not a positive integer |
 | `CONFIG_NOTIFY_REPORTER_UNSUPPORTED` | `notifyReporter` over a store with threads that does not implement `addCommentIfAbsent` |
+| `CONFIG_NOTIFY_TEAM_UNSUPPORTED` | `notifyTeam` over a store with threads that does not implement `addCommentIfAbsent` |
 | `CONFIG_RECORDING_UPLOAD_HOOK_MISSING` | `beforeCreate` with a `recordingStorage` but no `beforeRecordingUpload`: uploads would be authorized on the browser's `?projectName=` |
 
 ## The security model, honestly
@@ -673,6 +675,32 @@ createSitepingHandler({
 - **Replies need `addCommentIfAbsent`.** A store with threads that cannot tell a new reply from a retried one would email on every retry, so the handler refuses to start (`CONFIG_NOTIFY_REPORTER_UNSUPPORTED`). Every bundled store implements it.
 - **Tracker syncs.** A status changed from GitHub, Linear, Jira or Plane through the [issue tracker webhooks](/docs/issue-trackers#two-way-sync) does not go through the handler: pass the same function to their `onStatusSynced`.
 - **Spoofed addresses.** `authorEmail` is what the widget sent, which anonymous visitors type. Whatever you email to it, the visitor chose the recipient: keep the content to their own feedback, never anything another reviewer wrote that they could not already see.
+
+### Notifying the team
+
+`notifyTeam(feedback, event, context)` is the team-side twin of `notifyReporter`. It is called once per stored feedback (`{ type: "created" }`, never for a replayed `clientId`), on a status change that closes or reopens one (`resolved` and `reopened`, decided exactly as for `notifyReporter`), and once per new reply, whoever wrote it (`{ type: "replied", comment }`: tell the reporter's replies from the team's by `comment.authorRole`). It receives the stored record, `authorEmail` included.
+
+[`@siteping/integration-notify`](/docs/notifications) builds it for Slack, Telegram, WhatsApp, email and signed webhooks:
+
+```ts
+import { createTeamNotifier } from "@siteping/integration-notify";
+import { createSlackChannel } from "@siteping/integration-notify/slack";
+
+createSitepingHandler({
+  store,
+  apiKey: process.env.SITEPING_API_KEY,
+  waitUntil: after,
+  notifyTeam: createTeamNotifier({
+    siteUrl: "https://acme.com",
+    channels: [createSlackChannel({ webhookUrl: process.env.SLACK_WEBHOOK_URL! })],
+  }),
+});
+```
+
+- **Never awaited.** Unlike `notifyReporter`, it runs in the background, like [webhooks](#webhooks): its promise goes to `waitUntil` when you set one, and the response leaves at once. A throw or a rejection is logged as `[siteping] Hook notifyTeam failed` and never reaches the request. A reply's feedback is looked up in the background too.
+- **Unset, nothing changes.** Without it (and without `notifyReporter`), a PATCH does not read the previous status.
+- **Replies need `addCommentIfAbsent`**, for the same reason as above (`CONFIG_NOTIFY_TEAM_UNSUPPORTED`).
+- **Tracker syncs** do not go through the handler: call it from the [issue tracker webhooks](/docs/issue-trackers#two-way-sync)' `onStatusSynced` — see [the example](/docs/notifications#latency-and-failures).
 
 ## HTTP reference
 
