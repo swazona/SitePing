@@ -51,6 +51,7 @@ import type { OwnFeedback } from "./own-feedback.js";
 import { normalizePanelActions } from "./panel-actions.js";
 import { BulkActions, type TriagePermission } from "./panel-bulk.js";
 import { DetailView } from "./panel-detail.js";
+import { mediaRows } from "./panel-media.js";
 import { createPageGroupHeader, groupFeedbacksByPage, PanelSortControls, sortFeedbacks } from "./panel-sort.js";
 import { PanelStats } from "./panel-stats.js";
 import { buildThread, type ThreadDraft } from "./panel-thread.js";
@@ -356,6 +357,7 @@ export class Panel {
         },
         onCustomActionError: (error) => this.reportActionError(error),
         permits: (fb, permission) => this.can(fb, permission),
+        mediaRows: (fb) => mediaRows(fb, this.t),
         buildThread: (fb) =>
           buildThread(fb, {
             t: this.t,

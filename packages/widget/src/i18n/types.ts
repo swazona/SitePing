@@ -177,6 +177,11 @@ export interface Translations {
   "detail.date": string;
   "detail.viewport": string;
   "detail.browser": string;
+  /** Label of the React component path row. */
+  "detail.component": string;
+  "detail.recording": string;
+  /** The link to the screen recording, opened in a new tab. */
+  "detail.watchRecording": string;
   "detail.resolvedAt": string;
   /** Closure-date label for won't-fix feedbacks. */
   "detail.closedAt": string;
