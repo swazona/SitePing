@@ -701,7 +701,7 @@ The protocol ships with `@siteping/server` as an OpenAPI 3.1 document, generated
 import spec from "@siteping/server/openapi.json" with { type: "json" };
 ```
 
-Every list response carries `protocol`, the version of the protocol the server speaks (`SITEPING_PROTOCOL_VERSION`, exported by `@siteping/server`: `2`). It rises with each addition a client may rely on, so a client checks `protocol >= N` before using what version N added, rather than probing for fields. Servers that predate it send none: read that as `0`. Version 2 added [multi-page flows](#multi-page-flows).
+Every list response carries `protocol`, the version of the protocol the server speaks (`SITEPING_PROTOCOL_VERSION`, exported by `@siteping/server`: `3`). It rises with each addition a client may rely on, so a client checks `protocol >= N` before using what version N added, rather than probing for fields. Servers that predate it send none: read that as `0`. Version 2 added [multi-page flows](#multi-page-flows); version 3 added [screen recordings](/docs/widget/recording) and component paths (the video upload, `diagnostics.recording`, `diagnostics.components` and `capabilities.recordings`). The version says what the server understands; whether one endpoint takes recordings is `capabilities.recordings`, set when it has a `recordingStorage`.
 
 What 1.x keeps stable:
 

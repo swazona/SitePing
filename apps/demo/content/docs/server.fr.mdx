@@ -701,7 +701,7 @@ Le protocole est livré avec `@siteping/server` sous forme de document OpenAPI 3
 import spec from "@siteping/server/openapi.json" with { type: "json" };
 ```
 
-Chaque réponse de liste porte `protocol`, la version du protocole que parle le serveur (`SITEPING_PROTOCOL_VERSION`, exporté par `@siteping/server` : `2`). Elle augmente à chaque ajout sur lequel un client peut s'appuyer : un client vérifie `protocol >= N` avant d'utiliser ce que la version N a ajouté, au lieu de sonder les champs. Les serveurs qui la précèdent n'en envoient pas : lisez-le comme `0`. La version 2 a ajouté les [parcours sur plusieurs pages](#parcours-sur-plusieurs-pages).
+Chaque réponse de liste porte `protocol`, la version du protocole que parle le serveur (`SITEPING_PROTOCOL_VERSION`, exporté par `@siteping/server` : `3`). Elle augmente à chaque ajout sur lequel un client peut s'appuyer : un client vérifie `protocol >= N` avant d'utiliser ce que la version N a ajouté, au lieu de sonder les champs. Les serveurs qui la précèdent n'en envoient pas : lisez-le comme `0`. La version 2 a ajouté les [parcours sur plusieurs pages](#parcours-sur-plusieurs-pages) ; la version 3, les [enregistrements d'écran](/fr/docs/widget/recording) et les chemins de composants (l'envoi vidéo, `diagnostics.recording`, `diagnostics.components` et `capabilities.recordings`). La version dit ce que le serveur comprend ; qu'un endpoint donné accepte les enregistrements, c'est `capabilities.recordings`, vrai quand il a un `recordingStorage`.
 
 Ce que la 1.x garde stable :
 

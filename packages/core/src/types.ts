@@ -1564,8 +1564,14 @@ export type CommentResponse = Prettify<
  *
  * Protocol 2 added multi-page flows: the `flowId`, `flowStep` and
  * `flowTitle` fields, always sent on a feedback, and the `flowId` list filter.
+ *
+ * Protocol 3 added screen recordings and component paths: the video `POST`
+ * upload, `diagnostics.recording`, `diagnostics.components` and
+ * `capabilities.recordings`. The protocol says what the server understands;
+ * `capabilities.recordings` says whether this endpoint is configured to take
+ * uploads, so a client offers recording on that flag alone.
  */
-export const SITEPING_PROTOCOL_VERSION = 2;
+export const SITEPING_PROTOCOL_VERSION = 3;
 
 /** What the store behind an endpoint supports — advertised on every list response. */
 export interface SitepingCapabilities {

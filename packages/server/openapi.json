@@ -2,14 +2,14 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SitePing HTTP API",
-    "version": "2",
+    "version": "3",
     "description": "The protocol `createSitepingHandler` (`@siteping/server`) serves: one endpoint, mounted at any path (`/api/siteping` here, what `npx @siteping/cli init` generates), five methods, JSON bodies. `info.version` is the protocol version a list response sends as `protocol`. Error strings are informational: branch on the status code. See https://siteping.dev/docs/server#wire-protocol.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
     }
   },
-  "x-siteping-protocol": 2,
+  "x-siteping-protocol": 3,
   "paths": {
     "/api/siteping": {
       "get": {
