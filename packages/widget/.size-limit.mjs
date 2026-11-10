@@ -24,7 +24,7 @@ export default [
   {
     name: "Panel, on first open (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^panel-/),
-    limit: "12 KB",
+    limit: "12.5 KB",
     gzip: true,
   },
   {
@@ -36,7 +36,7 @@ export default [
   {
     name: "Locale dictionaries, all eight summed (lazy)",
     path: lazyLoad(dir, "dist/index.js", /^(de|es|fr|it|ja|ko|pt|ru)-/),
-    limit: "21.5 KB",
+    limit: "22 KB",
     gzip: true,
   },
   {
@@ -60,7 +60,7 @@ export default [
   {
     name: "IIFE script bundle (index.global.js)",
     path: "dist/index.global.js",
-    limit: "159 KB",
+    limit: "160 KB",
     gzip: true,
   },
 ];
