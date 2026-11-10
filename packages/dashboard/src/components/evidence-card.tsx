@@ -1,6 +1,7 @@
 import type { AnnotationRecord, FeedbackRecord, ScreenshotRegion } from "@siteping/core";
 import type { CSSProperties, ReactElement } from "react";
 import { useRef, useState } from "react";
+import { canCopy, copyOrSelect } from "../clipboard.js";
 import { pathFromUrl, safeScreenshotUrl } from "../format.js";
 import { useInboxUi } from "./context.js";
 
@@ -50,24 +51,10 @@ interface AnchorFallbackProps {
 function AnchorFallback({ annotation, withCorners }: AnchorFallbackProps): ReactElement {
   const { t, notify } = useInboxUi();
   const selectorRef = useRef<HTMLButtonElement | null>(null);
-  const hasClipboard = typeof navigator !== "undefined" && Boolean(navigator.clipboard);
+  const hasClipboard = canCopy();
 
   const copySelector = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(annotation.cssSelector);
-      notify(t("inbox.copied"));
-    } catch {
-      // Write blocked (permission, insecure context): select the text so a
-      // manual Ctrl+C works, and stay silent — nothing landed on the clipboard.
-      const el = selectorRef.current;
-      const selection = typeof window !== "undefined" ? window.getSelection() : null;
-      if (el && selection) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
+    if (await copyOrSelect(annotation.cssSelector, selectorRef.current)) notify(t("inbox.copied"));
   };
 
   return (
