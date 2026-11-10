@@ -5,6 +5,7 @@ import type {
   FeedbackCreateInput,
   FeedbackRecord,
   OpenFeedbackStatus,
+  RecordingStorage,
   SitepingLogger,
   SitepingStore,
 } from "@siteping/core";
@@ -184,6 +185,22 @@ export interface SitepingHandlerBaseOptions<Principal> {
    * in, before any of it is parsed.
    */
   maxBodyBytes?: number | undefined;
+  /**
+   * Where screen recordings go. With it, list responses advertise
+   * `capabilities.recordings`, the widget offers "Record screen" (when the
+   * host enables it), and a `POST` whose body is the video itself
+   * (`Content-Type: video/webm` or `video/mp4`, `?projectName=…&clientId=…`)
+   * is stored through it under the same access rule as a create and answers
+   * `201 { url }`. A feedback then keeps a `diagnostics.recording` only when
+   * `isOwnUrl` recognises its URL. Without it, such a POST answers 415 and
+   * any `diagnostics.recording` is dropped.
+   */
+  recordingStorage?: RecordingStorage | undefined;
+  /**
+   * Largest recording upload accepted, in bytes — 16 MiB by default. A
+   * longer one answers 413 before it is stored.
+   */
+  maxRecordingBytes?: number | undefined;
   /**
    * Outgoing webhooks fired after a write succeeds — by default when a
    * feedback is stored; each config's `events` opts into status changes,

@@ -10,6 +10,7 @@ import { Popup } from "./popup.js";
 import { NO_VIEWPORT_INSETS, type ViewportInsets } from "./popup-placement.js";
 import { type AnnotatedScreenshot, captureAnnotatedScreenshot } from "./screenshot.js";
 import { SYSTEM_FONT, type ThemeColors } from "./styles/theme.js";
+import { surfaceKit } from "./surface-kit.js";
 import { canHover, isCoarsePointer, prefersReducedMotion } from "./viewport.js";
 
 /** Below this size (px) on either axis, a gesture is a click or a tap: it points at the element under it. */
@@ -73,6 +74,16 @@ export interface AnnotationComplete {
    * `screenshotDataUrl` is null.
    */
   screenshotRegion?: ScreenshotRegion | null | undefined;
+  /** The page element the annotation is anchored to — the launcher reads its React component path. */
+  element?: Element | null | undefined;
+}
+
+/** Optional parts of the feedback form. */
+export interface AnnotatorOptions {
+  /** With `enableScreenshot`, offer "Mark up screenshot" (default `true`). */
+  screenshotEditor?: boolean | undefined;
+  /** Built for each form: an extra item of its tool row (the attached recording), or null. */
+  formAttachment?: (() => HTMLElement | null) | undefined;
 }
 
 /**
@@ -151,6 +162,7 @@ export class Annotator {
     private readonly t: TFunction,
     private readonly enableScreenshot: boolean = false,
     private readonly getFallbackTarget?: () => HTMLElement | null,
+    private readonly options: AnnotatorOptions = {},
   ) {
     this.popup = new Popup(colors, t);
 
@@ -549,7 +561,7 @@ export class Annotator {
 
     // Submission stays inside the popup so the user gets a visible spinner
     // until the server confirms — see finishDrawing for the rationale.
-    const result = await this.openForm(annotation, rectBounds, tap ? clampToViewport(rectBounds) : rectBounds);
+    const result = await this.openForm(annotation, rectBounds, target, tap ? clampToViewport(rectBounds) : rectBounds);
 
     this.drawingRect?.remove();
     this.drawingRect = null;
@@ -689,12 +701,12 @@ export class Annotator {
 
     // Build annotation payload BEFORE the popup opens — the overlay is still
     // up so `findAnchorElement` can briefly disable pointer events on it.
-    const { annotation } = this.buildAnnotation(rectBounds);
+    const { annotation, anchorElement } = this.buildAnnotation(rectBounds);
 
     // Keep the drawn rectangle visible while the popup is open so the user
     // can see what they're sending feedback about — including while the
     // submit-spinner is running. We only remove it after the popup closes.
-    const result = await this.openForm(annotation, rectBounds);
+    const result = await this.openForm(annotation, rectBounds, anchorElement);
 
     this.drawingRect?.remove();
     this.drawingRect = null;
@@ -736,7 +748,7 @@ export class Annotator {
     // We also derive the capture rect from the anchor element's bounding box
     // (clamped to the viewport) so enableScreenshot produces a useful image
     // instead of a postage stamp.
-    const { annotation, anchorBounds } = this.buildAnnotation(pointRect);
+    const { annotation, anchorBounds, anchorElement } = this.buildAnnotation(pointRect);
 
     // Use the anchor element's bounding box (clamped to viewport) for
     // screenshot capture so reviewers get meaningful context, not a 20×20 px
@@ -754,7 +766,7 @@ export class Annotator {
     });
     this.overlay?.appendChild(this.drawingRect);
 
-    await this.openForm(annotation, pointRect, captureRect);
+    await this.openForm(annotation, pointRect, anchorElement, captureRect);
 
     // Instant flow: always deactivate on popup close — unlike the draw flow
     // where cancel keeps the session alive so the user can re-draw, there is
@@ -773,14 +785,24 @@ export class Annotator {
   private openForm(
     annotation: AnnotationPayload,
     rect: DOMRect,
+    element: Element | null,
     captureRect: DOMRect = rect,
   ): ReturnType<Popup["show"]> {
     const session = newPopupSession();
+    const tools: HTMLElement[] = [];
+    if (this.enableScreenshot && this.options.screenshotEditor !== false) {
+      tools.push(this.markupButton(annotation, captureRect, session));
+    }
+    const attachment = this.options.formAttachment?.();
+    if (attachment) tools.push(attachment);
+    this.popup.setTools(tools);
     const shown = this.popup.show(
       rect,
       (formResult) => {
         this.freezeCancel(true);
-        return this.runSubmission(annotation, formResult, captureRect, session).finally(() => this.freezeCancel(false));
+        return this.runSubmission(annotation, formResult, captureRect, session, element).finally(() =>
+          this.freezeCancel(false),
+        );
       },
       this.toolbarInsets(),
     );
@@ -820,12 +842,20 @@ export class Annotator {
    * so exactly one `runSubmission` is ever live — the global outcome events
    * cannot cross-wire between submissions and need no correlation id.
    */
-  private async runSubmission(
+  /** A pill for the form's tool row (see `Popup.toolButton`) — for `formAttachment`. */
+  toolButton(label: string, onClick: () => void): HTMLButtonElement {
+    return this.popup.toolButton(label, onClick);
+  }
+
+  /**
+   * The session's screenshot, captured on first use and reused after — by
+   * every retry, and by the editor, whose markup replaces it.
+   */
+  private async sessionCapture(
     annotation: AnnotationPayload,
-    formResult: { type: FeedbackType; message: string },
     rectBounds: DOMRect,
     session: PopupSession,
-  ): Promise<void> {
+  ): Promise<AnnotatedScreenshot | null> {
     // Screenshot capture is the slow part. Capture once and reuse the
     // cached data URL + region on every retry — re-running html2canvas-pro after
     // each failed submit would punish the user for a network blip.
@@ -841,7 +871,61 @@ export class Annotator {
         ),
       );
     }
-    const capture = session.screenshot;
+    return session.screenshot;
+  }
+
+  /**
+   * "Mark up screenshot": capture now (the capture the send would take), open
+   * the editor — its own chunk, loaded on first use — and keep the edited
+   * image as the session's screenshot, which the send then uploads.
+   */
+  private markupButton(annotation: AnnotationPayload, rectBounds: DOMRect, session: PopupSession): HTMLButtonElement {
+    let busy = false;
+    const button = this.popup.toolButton(this.t("popup.markup"), () => {
+      if (busy) return;
+      busy = true;
+      button.setAttribute("aria-busy", "true");
+      void (async () => {
+        try {
+          const capture = await this.sessionCapture(annotation, rectBounds, session);
+          if (!capture) {
+            button.disabled = true;
+            return;
+          }
+          const { openScreenshotEditor } = await import("./screenshot-editor.js");
+          const edited = await openScreenshotEditor({
+            dataUrl: capture.dataUrl,
+            colors: this.colors,
+            t: this.t,
+            kit: surfaceKit,
+          });
+          if (edited && edited !== capture.dataUrl && session.screenshot) {
+            session.screenshot = { ...session.screenshot, dataUrl: edited };
+            setText(button, this.t("popup.markupDone"));
+            button.setAttribute("aria-pressed", "true");
+          }
+        } catch (error) {
+          console.warn("[siteping] screenshot editor failed:", error);
+        } finally {
+          busy = false;
+          button.removeAttribute("aria-busy");
+        }
+      })();
+    });
+    button.setAttribute("aria-pressed", "false");
+    return button;
+  }
+
+  private async runSubmission(
+    annotation: AnnotationPayload,
+    formResult: { type: FeedbackType; message: string },
+    rectBounds: DOMRect,
+    session: PopupSession,
+    element: Element | null = null,
+  ): Promise<void> {
+    const capture = await this.sessionCapture(annotation, rectBounds, session);
+    // Torn down while capturing: nothing is left to settle this submission.
+    if (this.destroyed) throw new Error("Annotator destroyed during submission");
 
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
@@ -884,6 +968,7 @@ export class Annotator {
         clientId: session.clientId,
         screenshotDataUrl: capture?.dataUrl ?? null,
         screenshotRegion: capture?.region ?? null,
+        element,
       });
     });
   }
@@ -892,7 +977,11 @@ export class Annotator {
    * Build an AnnotationPayload from a drawn rectangle.
    * Temporarily hides the overlay to access the real DOM underneath.
    */
-  private buildAnnotation(rectBounds: DOMRect): { annotation: AnnotationPayload; anchorBounds: DOMRect } {
+  private buildAnnotation(rectBounds: DOMRect): {
+    annotation: AnnotationPayload;
+    anchorBounds: DOMRect;
+    anchorElement: Element;
+  } {
     // Temporarily hide overlay to find the real element underneath
     if (this.overlay) this.overlay.style.pointerEvents = "none";
     const anchorElement = findAnchorElement(rectBounds);
@@ -911,9 +1000,13 @@ export class Annotator {
       viewportH: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
     };
-    return { annotation, anchorBounds };
+    return { annotation, anchorBounds, anchorElement };
   }
+  /** Set by `destroy()` — a submission still capturing its screenshot then stops there. */
+  private destroyed = false;
+
   destroy(): void {
+    this.destroyed = true;
     this.deactivate();
     this.unregisterEscapeLayer();
     // Settle an in-flight submission BEFORE tearing down the popup, so the

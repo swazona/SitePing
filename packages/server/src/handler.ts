@@ -1,6 +1,6 @@
 import { hasOwn, SitepingConfigError, type SitepingLogger } from "@siteping/core";
 import { type AccessGate, createAccessGate, createApiKeyGate } from "./access.js";
-import { DEFAULT_MAX_BODY_BYTES } from "./constants.js";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_RECORDING_BYTES } from "./constants.js";
 import { preflightResponse } from "./cors.js";
 import { createNotifier } from "./notify.js";
 import { createCommentOperation } from "./operations/create-comment.js";
@@ -9,6 +9,7 @@ import { deleteCommentOperation } from "./operations/delete-comment.js";
 import { deleteFeedbackOperation } from "./operations/delete-feedback.js";
 import { listFeedbacksOperation } from "./operations/list-feedbacks.js";
 import { updateFeedbackOperation } from "./operations/update-feedback.js";
+import { isRecordingUpload, uploadRecordingOperation } from "./operations/upload-recording.js";
 import type {
   SitepingAccessHandlerOptions,
   SitepingApiKeyHandlerOptions,
@@ -126,6 +127,8 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     logger: customLogger,
     describeError,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+    recordingStorage,
+    maxRecordingBytes = DEFAULT_MAX_RECORDING_BYTES,
   } = options as SitepingHandlerBaseOptions<Principal>;
   if (!store) {
     throw new SitepingConfigError("CONFIG_STORE_MISSING", "[siteping] createSitepingHandler requires a `store`.");
@@ -134,6 +137,12 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
     throw new SitepingConfigError(
       "CONFIG_MAX_BODY_BYTES_INVALID",
       `[siteping] createSitepingHandler: \`maxBodyBytes\` must be a positive integer, got ${maxBodyBytes}.`,
+    );
+  }
+  if (!Number.isSafeInteger(maxRecordingBytes) || maxRecordingBytes <= 0) {
+    throw new SitepingConfigError(
+      "CONFIG_MAX_BODY_BYTES_INVALID",
+      `[siteping] createSitepingHandler: \`maxRecordingBytes\` must be a positive integer, got ${maxRecordingBytes}.`,
     );
   }
   // A custom `authorize` may scope callers to projects, but PATCH/DELETE
@@ -183,34 +192,36 @@ export function createSitepingHandler<Principal extends SitepingPrincipal>(
   }
   const notify = createNotifier(webhookList, waitUntil, pipeline);
   const limit = createRateLimiter(rateLimit, allowedOrigins, logger);
+  const uploadRecording = uploadRecordingOperation({ pipeline, recordingStorage, maxRecordingBytes });
+  const postJson = routeByBody(
+    pipeline,
+    "POST",
+    "feedbackId",
+    createCommentOperation({
+      store,
+      pipeline,
+      notify,
+      beforeComment,
+      onCommentCreated: hooks.onCommentCreated?.bind(hooks),
+      notifyReporter,
+    }),
+    createFeedbackOperation({
+      store,
+      pipeline,
+      notify,
+      beforeCreate,
+      // Bound so hooks written as class methods keep their `this`.
+      onCreated: hooks.onCreated?.bind(hooks),
+      recordingStorage,
+    }),
+  );
 
   return {
     OPTIONS: (request: Request): Response => preflightResponse(request, allowedOrigins),
-    POST: limit(
-      "POST",
-      routeByBody(
-        pipeline,
-        "POST",
-        "feedbackId",
-        createCommentOperation({
-          store,
-          pipeline,
-          notify,
-          beforeComment,
-          onCommentCreated: hooks.onCommentCreated?.bind(hooks),
-          notifyReporter,
-        }),
-        createFeedbackOperation({
-          store,
-          pipeline,
-          notify,
-          beforeCreate,
-          // Bound so hooks written as class methods keep their `this`.
-          onCreated: hooks.onCreated?.bind(hooks),
-        }),
-      ),
-    ),
-    GET: limit("GET", listFeedbacksOperation({ store, pipeline })),
+    // A video body is a recording upload; anything else, a JSON feedback or
+    // comment. Both count against the `create` rate-limit bucket.
+    POST: limit("POST", (request: Request) => (isRecordingUpload(request) ? uploadRecording(request) : postJson(request))),
+    GET: limit("GET", listFeedbacksOperation({ store, pipeline, recordings: recordingStorage !== undefined })),
     PATCH: limit(
       "PATCH",
       updateFeedbackOperation({ store, pipeline, notify, onUpdated: hooks.onUpdated?.bind(hooks), notifyReporter }),

@@ -65,7 +65,7 @@ describe("PrismaStore — comment capability", () => {
     }
     const handler = createSitepingHandler({ store: new ThreadedStore(fakePrisma({ comments: false })) });
     const listed = (await (await handler.GET(new Request(`${ENDPOINT}?projectName=p`))).json()) as FeedbackResponseList;
-    expect(listed.capabilities).toEqual({ comments: true, deleteComments: true });
+    expect(listed.capabilities).toEqual({ comments: true, deleteComments: true, recordings: false });
   });
 
   it("reads the thread only from a client that has the model", async () => {
@@ -107,7 +107,7 @@ describe("createSitepingHandler — a schema synced before threads", () => {
     ).json()) as FeedbackResponseList;
 
     expect(comment.status).toBe(501);
-    expect(listed.capabilities).toEqual({ comments: false, deleteComments: false });
+    expect(listed.capabilities).toEqual({ comments: false, deleteComments: false, recordings: false });
     expect(listed.feedbacks[0]?.comments).toEqual([]);
   });
 });

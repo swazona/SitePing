@@ -59,6 +59,7 @@ export const pt: Translations = {
   "fab.aria": "Siteping — Menu de feedback",
   "fab.messages": "Exibir barra lateral",
   "fab.annotate": "Criar nova anotação",
+  "fab.record": "Gravar a tela",
   "fab.annotations": "Exibir ou ocultar marcadores",
   "fab.flowStart": "Iniciar um fluxo",
   "fab.flowFinish": "Encerrar o fluxo",
@@ -88,6 +89,20 @@ export const pt: Translations = {
   "popup.submitHintOther": "Ctrl+Enter para enviar",
   "popup.cancel": "Cancelar",
   "popup.submit": "Enviar",
+  "popup.markup": "Marcar a captura",
+  "popup.markupDone": "Captura marcada",
+  "popup.recording": "Gravação ({duration})",
+  "popup.recordingRemove": "Remover a gravação",
+  "editor.title": "Marcar a captura",
+  "editor.pen": "Caneta",
+  "editor.arrow": "Seta",
+  "editor.rect": "Destacar",
+  "editor.blur": "Ocultar",
+  "editor.undo": "Desfazer",
+  "editor.cancel": "Cancelar",
+  "editor.done": "Concluir",
+  "editor.canvasAria":
+    "Captura de tela. Arraste para desenhar com a ferramenta escolhida. No teclado: as setas movem, Enter começa e termina uma forma.",
 
   // Identity modal
   "identity.title": "Identifique-se",
@@ -109,7 +124,11 @@ export const pt: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Feedback enviado com sucesso",
   "feedback.error.message": "Falha ao enviar feedback",
-  "feedback.queued": "Salvo neste dispositivo. Será enviado na sua próxima visita.",
+  "feedback.queued": "Salvo neste dispositivo. Será enviado quando você voltar a ficar online.",
+  "record.stop": "Parar a gravação",
+  "record.status": "Gravando {time}",
+  "record.failed": "Falha na gravação da tela",
+  "record.uploadFailed": "Não foi possível enviar a gravação; o feedback foi enviado sem ela.",
   "feedback.deleted.confirmation": "Feedback excluído",
 
   // Badge

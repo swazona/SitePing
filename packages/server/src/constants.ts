@@ -10,6 +10,9 @@ export const MAX_ANNOTATIONS_PER_FEEDBACK = 50;
  */
 export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+/** Default `maxRecordingBytes`: twice the widget's default recording limit (8 MiB). */
+export const DEFAULT_MAX_RECORDING_BYTES = 16 * 1024 * 1024;
+
 /**
  * Most issues a validation 400 lists. Fifty annotations of `{}` alone make a
  * thousand: listing them all would answer a small body with a large one.
@@ -35,6 +38,7 @@ export const ERROR_MESSAGES = {
   apiKeyRequiredForDestructive: "apiKey required for destructive operations",
   forbidden: "Forbidden",
   unsupportedMediaType: "Content-Type must be application/json",
+  invalidRecording: "The recording must be a WebM or MP4 video",
   feedbackNotFound: "Feedback not found",
   commentNotFound: "Comment not found",
   clientIdUsedByAnotherProject: "clientId already used by another project",

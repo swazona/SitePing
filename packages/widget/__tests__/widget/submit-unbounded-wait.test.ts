@@ -6,6 +6,9 @@
 import { type SitepingConfig, SitepingError, type SitepingStore } from "@siteping/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { launch } from "../../src/launcher.js";
+// Loaded up front: the send imports the offline queue lazily, and a module load
+// under fake timers would take real time the 1 s steps below count as seconds.
+import "../../src/offline-queue.js";
 import { mockMatchMedia } from "../helpers.js";
 
 mockMatchMedia(false);

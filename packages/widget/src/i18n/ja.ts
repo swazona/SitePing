@@ -58,6 +58,7 @@ export const ja: Translations = {
   "fab.aria": "Siteping — フィードバックメニュー",
   "fab.messages": "サイドバーを表示",
   "fab.annotate": "新しい注釈を作成",
+  "fab.record": "画面を録画",
   "fab.annotations": "マーカーの表示を切り替え",
   "fab.flowStart": "フローを開始",
   "fab.flowFinish": "フローを終了",
@@ -87,6 +88,20 @@ export const ja: Translations = {
   "popup.submitHintOther": "Ctrl+Enter で送信",
   "popup.cancel": "キャンセル",
   "popup.submit": "送信",
+  "popup.markup": "スクリーンショットに書き込む",
+  "popup.markupDone": "書き込み済み",
+  "popup.recording": "録画（{duration}）",
+  "popup.recordingRemove": "録画を削除",
+  "editor.title": "スクリーンショットに書き込む",
+  "editor.pen": "ペン",
+  "editor.arrow": "矢印",
+  "editor.rect": "強調",
+  "editor.blur": "墨消し",
+  "editor.undo": "元に戻す",
+  "editor.cancel": "キャンセル",
+  "editor.done": "完了",
+  "editor.canvasAria":
+    "スクリーンショット。ドラッグして選択したツールで描画します。キーボード：矢印キーで移動、Enter で図形の開始と終了。",
 
   // Identity modal
   "identity.title": "お名前とメールアドレスを入力",
@@ -108,7 +123,11 @@ export const ja: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "フィードバックを送信しました",
   "feedback.error.message": "フィードバックの送信に失敗しました",
-  "feedback.queued": "この端末に保存しました。次回のアクセス時に送信されます。",
+  "feedback.queued": "この端末に保存しました。オンラインに戻ると送信されます。",
+  "record.stop": "録画を停止",
+  "record.status": "録画中 {time}",
+  "record.failed": "画面の録画に失敗しました",
+  "record.uploadFailed": "録画をアップロードできませんでした。フィードバックは録画なしで送信されました。",
   "feedback.deleted.confirmation": "フィードバックを削除しました",
 
   // Badge

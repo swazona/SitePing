@@ -3,11 +3,11 @@ import { parseSvg, setInert, setText } from "./dom-utils.js";
 import type { EventBus, WidgetEvents } from "./events.js";
 import { registerEscapeLayer } from "./host-isolation.js";
 import { type TFunction, type Translations, tWithParams } from "./i18n/index.js";
-import { ICON_CLOSE, ICON_EDIT, ICON_EYE, ICON_EYE_OFF, ICON_FLOW, ICON_LIST, ICON_SITEPING } from "./icons.js";
+import { ICON_CLOSE, ICON_EDIT, ICON_EYE, ICON_EYE_OFF, ICON_FLOW, ICON_LIST, ICON_RECORD, ICON_SITEPING } from "./icons.js";
 import { isCoarsePointer } from "./viewport.js";
 
 /** Closed set of radial menu item ids — keeps the label lookup exhaustive. */
-type RadialItemId = "chat" | "annotate" | "flow" | "toggle-annotations";
+type RadialItemId = "chat" | "annotate" | "record" | "flow" | "toggle-annotations";
 
 interface RadialItem {
   id: RadialItemId;
@@ -25,6 +25,7 @@ const ITEM_GAP_TOUCH = 60;
 const ITEM_LABEL_KEYS: Record<RadialItemId, keyof Translations> = {
   chat: "fab.messages",
   annotate: "fab.annotate",
+  record: "fab.record",
   flow: "fab.flowStart",
   "toggle-annotations": "fab.annotations",
 };
@@ -87,11 +88,8 @@ export class Fab {
     // The items fade out while closed, but stay rendered: out of the tab order.
     setInert(this.radialContainer, true);
 
-    for (let i = 0; i < this.items.length; i++) {
-      const item = this.items[i];
-      if (!item) continue;
-      this.radialContainer.appendChild(this.createItem(item, i));
-    }
+    for (const item of this.items) this.radialContainer.appendChild(this.buildItem(item));
+    this.indexItems();
 
     // Phone layout: dims the page behind the open speed dial so its labels
     // read over any content (CSS renders it on compact viewports only).
@@ -167,36 +165,58 @@ export class Fab {
 
   private onDocumentClick: (e: MouseEvent) => void;
 
-  private createItem(item: RadialItem, index: number): HTMLButtonElement {
+  private buildItem(item: RadialItem): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.className = "sp-radial-item";
-    btn.style.setProperty("--sp-i", String(index));
     btn.appendChild(parseSvg(item.icon));
     btn.setAttribute("role", "menuitem");
     btn.dataset.itemId = item.id;
-
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.handleItemClick(item.id);
     });
-
     const label = document.createElement("span");
     label.className = "sp-radial-label";
     btn.appendChild(label);
     return btn;
   }
 
+  /** Number the items in menu order (`--sp-i` staggers their animation). */
+  private indexItems(): void {
+    const buttons = this.radialContainer.querySelectorAll<HTMLButtonElement>(".sp-radial-item");
+    buttons.forEach((btn, i) => btn.style.setProperty("--sp-i", String(i)));
+  }
+
   /**
-   * Offer the flow item, after the pencil — once the endpoint is known to
-   * keep flows, or while a flow is active. Idempotent.
+   * Offer "Record screen" (after "Create new annotation") or take it away —
+   * the launcher shows it once it knows the endpoint takes recordings.
+   */
+  setRecordAvailable(available: boolean): void {
+    const existing = this.radialContainer.querySelector('[data-item-id="record"]');
+    if (available === (existing !== null)) return;
+    if (existing) {
+      existing.remove();
+    } else {
+      const btn = this.buildItem({ id: "record", icon: ICON_RECORD });
+      this.radialContainer.querySelector('[data-item-id="annotate"]')?.after(btn);
+    }
+    this.indexItems();
+    this.applyLabels();
+    if (this.isOpen) this.layoutOpenItems();
+  }
+
+  /**
+   * Offer the flow item, after the pencil (and "Record screen", when offered)
+   * — once the endpoint is known to keep flows, or while a flow is active.
+   * Idempotent.
    */
   setFlowAvailable(): void {
     if (this.items.some((item) => item.id === "flow")) return;
     const item: RadialItem = { id: "flow", icon: ICON_FLOW };
     const next = this.radialContainer.querySelector('[data-item-id="toggle-annotations"]');
-    this.radialContainer.insertBefore(this.createItem(item, 2), next);
-    this.items.splice(2, 0, item);
-    if (next instanceof HTMLElement) next.style.setProperty("--sp-i", "3");
+    this.radialContainer.insertBefore(this.buildItem(item), next);
+    this.items.push(item);
+    this.indexItems();
     this.applyLabels();
     if (this.isOpen) this.layoutOpenItems();
   }
@@ -297,6 +317,7 @@ export class Fab {
     const gap = isCoarsePointer() ? ITEM_GAP_TOUCH : ITEM_GAP;
     const buttons = this.radialContainer.querySelectorAll<HTMLButtonElement>(".sp-radial-item");
     buttons.forEach((btn, i) => {
+      btn.style.setProperty("--sp-i", String(i));
       // Stack vertically above the FAB with initial offset + gap
       const y = -(16 + gap * (i + 1));
       btn.style.transform = `translate(0px, ${y}px) scale(1)`;
@@ -345,6 +366,9 @@ export class Fab {
         this.bus.emit("annotation:start");
         break;
       }
+      case "record":
+        this.bus.emit("recording:start");
+        break;
       case "flow":
         this.bus.emit("flow:toggle");
         break;

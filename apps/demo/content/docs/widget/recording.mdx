@@ -1,0 +1,71 @@
+---
+title: Screen recording
+description: Let reviewers record what they did, and attach the video to their feedback.
+---
+
+Some bugs are a sequence, not a spot: a flicker, a step that undoes the last one, a form that loses what was typed. With `enableScreenRecording`, the floating button's menu gains **Record screen**:
+
+```ts
+initSiteping({
+  endpoint: "/api/siteping",
+  projectName: "my-project",
+  enableScreenRecording: true, // or { maxDurationMs: 30_000, maxBytes: 4 * 1024 * 1024 }
+});
+```
+
+1. The browser asks what to share. Chromium offers the current tab first (`preferCurrentTab`); other browsers show their usual picker.
+2. A recording indicator sits at the bottom of the page with the elapsed time and **Stop recording**. The recording also stops at the duration limit (default 60 s), just before the size limit (default 8 MiB), or when the reviewer ends the share from the browser's own controls.
+3. Annotate mode starts: the reviewer points at what the recording is about and writes the feedback as usual. The form shows the recording as **Recording (0:12) ✕**; activating it detaches the video.
+4. On Send, the video is uploaded first, then the feedback names it in `diagnostics.recording`: `{ url, mimeType, durationMs, bytes }`.
+
+The recorder is a separate chunk (about 1.6 kB gzipped), loaded on the first recording. The video carries no audio.
+
+## Where it is offered
+
+All of these, or the action is not shown:
+
+- `enableScreenRecording` is set, in HTTP mode (`endpoint`) — `store` mode has nowhere to upload a video;
+- the browser can record its screen: `navigator.mediaDevices.getDisplayMedia` and `MediaRecorder`. Desktop Chrome, Edge, Firefox and Safari can; iOS Safari and most mobile browsers cannot;
+- the endpoint's list response advertises `capabilities.recordings` — a server configured with a `recordingStorage` (below). An older server, or one without it, sends no such capability, and nothing changes.
+
+## How a recording reaches storage
+
+A screenshot travels inside the feedback's JSON, as a data URL of a megabyte at most. A minute of screen video weighs several, past the JSON body limit (`maxBodyBytes`), and base64 would add a third. So a recording takes a step of its own, before the feedback:
+
+```http
+POST /api/siteping?projectName=my-project&clientId=<the feedback's clientId>
+Content-Type: video/webm
+
+<the video's bytes>
+```
+
+The server applies the same access rule as a create (`action: "create"` on that project), refuses more than `maxRecordingBytes` (default 16 MiB) with `413`, reads the type from the file's first bytes (WebM or MP4, whatever `Content-Type` claims), and hands the bytes to your `recordingStorage`. It answers `201 { url }`, and the feedback sent next carries that URL in `diagnostics.recording`. The server keeps it only when `recordingStorage.isOwnUrl(url)` says the URL is one it produced, so a client cannot attach any address it likes.
+
+`RecordingStorage` is two functions — here over an S3 bucket:
+
+```ts
+import { createSitepingHandler, type RecordingStorage } from "@siteping/server";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({ region: "eu-west-3" });
+const base = "https://cdn.example.com/";
+
+const recordingStorage: RecordingStorage = {
+  async upload(bytes, { mimeType }) {
+    const key = `siteping-recordings/${crypto.randomUUID()}`; // a fresh key per upload
+    await s3.send(new PutObjectCommand({ Bucket: "my-bucket", Key: key, Body: bytes, ContentType: mimeType }));
+    return { url: `${base}${key}` };
+  },
+  isOwnUrl: (url) => url.startsWith(`${base}siteping-recordings/`),
+};
+
+export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({ store, recordingStorage });
+```
+
+The record keeps the URL only: `diagnostics` is the JSON column every store already persists, so no migration is needed. Deleting a feedback does not delete its video; expire the prefix with a bucket lifecycle rule if you need to.
+
+If the upload fails on the network, the feedback and its video wait together in the [offline queue](/docs/widget#reliability-details-you-get-for-free) and are sent together later. If the server refuses the video (too large, not a video), the feedback is sent without it and the widget says so.
+
+## Privacy
+
+A recording shows whatever the reviewer shares — the whole screen, if they pick it. The `data-siteping-ignore` [masking](/docs/widget/screenshots#privacy-masking) applies to screenshots, which the widget renders itself; it cannot reach into a video the browser records. Tell reviewers what a recording contains before you turn it on.

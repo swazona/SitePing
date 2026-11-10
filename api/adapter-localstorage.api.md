@@ -207,8 +207,10 @@ interface ConsoleDiagnosticEntry {
 type ConsoleDiagnosticLevel = (typeof CONSOLE_DIAGNOSTIC_LEVELS)[number];
 
 interface DiagnosticsSnapshot {
+    components?: string[] | undefined;
     console: ConsoleDiagnosticEntry[];
     network: NetworkDiagnosticEntry[];
+    recording?: RecordingInfo | undefined;
 }
 
 const FEEDBACK_STATUSES: readonly [
@@ -321,6 +323,13 @@ const OPEN_FEEDBACK_STATUSES: readonly [
 ];
 
 type OpenFeedbackStatus = (typeof OPEN_FEEDBACK_STATUSES)[number];
+
+interface RecordingInfo {
+    bytes: number;
+    durationMs: number;
+    mimeType: "video/mp4" | "video/webm";
+    url: string;
+}
 
 interface ScreenshotRegion {
     hPct: number;

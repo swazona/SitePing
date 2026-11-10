@@ -58,6 +58,7 @@ export const ru: Translations = {
   "fab.aria": "Siteping — Меню обратной связи",
   "fab.messages": "Показать панель",
   "fab.annotate": "Создать аннотацию",
+  "fab.record": "Записать экран",
   "fab.annotations": "Показать или скрыть метки",
   "fab.flowStart": "Начать сценарий",
   "fab.flowFinish": "Завершить сценарий",
@@ -87,6 +88,20 @@ export const ru: Translations = {
   "popup.submitHintOther": "Ctrl+Enter — отправить",
   "popup.cancel": "Отмена",
   "popup.submit": "Отправить",
+  "popup.markup": "Разметить снимок",
+  "popup.markupDone": "Снимок размечен",
+  "popup.recording": "Запись ({duration})",
+  "popup.recordingRemove": "Удалить запись",
+  "editor.title": "Разметить снимок",
+  "editor.pen": "Перо",
+  "editor.arrow": "Стрелка",
+  "editor.rect": "Выделить",
+  "editor.blur": "Скрыть",
+  "editor.undo": "Отменить",
+  "editor.cancel": "Отмена",
+  "editor.done": "Готово",
+  "editor.canvasAria":
+    "Снимок экрана. Перетащите, чтобы рисовать выбранным инструментом. С клавиатуры: стрелки перемещают, Enter начинает и завершает фигуру.",
 
   // Identity modal
   "identity.title": "Представьтесь",
@@ -108,7 +123,11 @@ export const ru: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Отзыв успешно отправлен",
   "feedback.error.message": "Не удалось отправить отзыв",
-  "feedback.queued": "Сохранено на этом устройстве. Отправится при следующем посещении.",
+  "feedback.queued": "Сохранено на этом устройстве. Отправится, когда вы снова будете в сети.",
+  "record.stop": "Остановить запись",
+  "record.status": "Запись {time}",
+  "record.failed": "Не удалось записать экран",
+  "record.uploadFailed": "Не удалось загрузить запись; отзыв отправлен без неё.",
   "feedback.deleted.confirmation": "Отзыв удалён",
 
   // Badge

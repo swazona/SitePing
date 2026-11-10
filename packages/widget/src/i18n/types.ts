@@ -59,6 +59,7 @@ export interface Translations {
   "fab.aria": string;
   "fab.messages": string;
   "fab.annotate": string;
+  "fab.record": string;
   "fab.annotations": string;
   /** The flow item while no flow is active / while one is. */
   "fab.flowStart": string;
@@ -90,6 +91,19 @@ export interface Translations {
   "popup.ariaLabel": string;
   "popup.cancel": string;
   "popup.submit": string;
+  "popup.markup": string;
+  "popup.markupDone": string;
+  "popup.recording": string;
+  "popup.recordingRemove": string;
+  "editor.title": string;
+  "editor.pen": string;
+  "editor.arrow": string;
+  "editor.rect": string;
+  "editor.blur": string;
+  "editor.undo": string;
+  "editor.cancel": string;
+  "editor.done": string;
+  "editor.canvasAria": string;
 
   // Identity modal
   "identity.title": string;
@@ -113,6 +127,10 @@ export interface Translations {
   "feedback.error.message": string;
   /** A failed send saved on the device for the next page load. */
   "feedback.queued": string;
+  "record.stop": string;
+  "record.status": string;
+  "record.failed": string;
+  "record.uploadFailed": string;
   "feedback.deleted.confirmation": string;
 
   // Badge

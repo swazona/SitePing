@@ -125,11 +125,16 @@ function createSlots(size: number): <Result>(task: () => Promise<Result>) => Pro
  * otherwise, so an oversized body is never held in memory whole.
  */
 async function readText(request: Request, maxBytes: number): Promise<string | null> {
+  const bytes = await readBytes(request, maxBytes);
+  return bytes && new TextDecoder().decode(bytes);
+}
+
+/** A request body as bytes, or `null` past `maxBytes` — counted the same way as {@link readText}. */
+export async function readBytes(request: Request, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
   if (Number(request.headers.get("Content-Length")) > maxBytes) return null;
-  if (!request.body) return "";
+  if (!request.body) return new Uint8Array(0);
   const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
+  const chunks: Uint8Array[] = [];
   let received = 0;
   for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
     received += chunk.value.byteLength;
@@ -137,9 +142,15 @@ async function readText(request: Request, maxBytes: number): Promise<string | nu
       await reader.cancel().catch(() => {});
       return null;
     }
-    text += decoder.decode(chunk.value, { stream: true });
+    chunks.push(chunk.value);
   }
-  return text + decoder.decode();
+  const bytes = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 /** `text` parsed as JSON, or `null` when it is not JSON. */
@@ -315,10 +326,14 @@ export function createPipeline<Principal>({
      * answers the logged 500 with CORS headers rather than rejecting, which
      * a browser would only see as an opaque network error.
      */
-    async enter(request: Request, method: SitepingHttpMethod): Promise<Step<Scope<Principal>>> {
+    async enter(
+      request: Request,
+      method: SitepingHttpMethod,
+      mediaTypes?: ReadonlyArray<string>,
+    ): Promise<Step<Scope<Principal>>> {
       const corsHeaders = buildCorsHeaders(request, allowedOrigins);
       if (gate.guardsMutations) {
-        const refusal = csrfRefusal(request, method, allowedOrigins);
+        const refusal = csrfRefusal(request, method, allowedOrigins, mediaTypes);
         if (refusal?.status === 403) {
           logger.error("[siteping] Refused a mutation from an origin outside allowedOrigins", {
             origin: refusal.origin,

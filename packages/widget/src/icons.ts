@@ -44,3 +44,6 @@ export const ICON_FLOW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
 
 // Pencil / edit-3 (Feather "edit-3") — pure pencil with no document. Used for the FAB radial item that creates a new annotation.
 export const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+
+/** Screen recording: a screen with a record dot. */
+export const ICON_RECORD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><circle cx="12" cy="11" r="3" fill="currentColor" stroke="none"/></svg>`;

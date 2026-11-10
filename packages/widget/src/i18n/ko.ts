@@ -58,6 +58,7 @@ export const ko: Translations = {
   "fab.aria": "Siteping — 피드백 메뉴",
   "fab.messages": "사이드바 보기",
   "fab.annotate": "새 주석 만들기",
+  "fab.record": "화면 녹화",
   "fab.annotations": "마커 보이기 또는 숨기기",
   "fab.flowStart": "흐름 시작",
   "fab.flowFinish": "흐름 종료",
@@ -87,6 +88,20 @@ export const ko: Translations = {
   "popup.submitHintOther": "Ctrl+Enter로 보내기",
   "popup.cancel": "취소",
   "popup.submit": "보내기",
+  "popup.markup": "스크린샷에 표시하기",
+  "popup.markupDone": "스크린샷 표시됨",
+  "popup.recording": "녹화 ({duration})",
+  "popup.recordingRemove": "녹화 삭제",
+  "editor.title": "스크린샷에 표시하기",
+  "editor.pen": "펜",
+  "editor.arrow": "화살표",
+  "editor.rect": "강조",
+  "editor.blur": "가리기",
+  "editor.undo": "실행 취소",
+  "editor.cancel": "취소",
+  "editor.done": "완료",
+  "editor.canvasAria":
+    "스크린샷. 드래그하여 선택한 도구로 그립니다. 키보드: 화살표 키로 이동하고 Enter로 도형을 시작하고 끝냅니다.",
 
   // Identity modal
   "identity.title": "작성자 정보",
@@ -108,7 +123,11 @@ export const ko: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "피드백을 보냈습니다",
   "feedback.error.message": "피드백을 보내지 못했습니다",
-  "feedback.queued": "이 기기에 저장했습니다. 다음 방문 시 전송됩니다.",
+  "feedback.queued": "이 기기에 저장했습니다. 다시 온라인이 되면 전송됩니다.",
+  "record.stop": "녹화 중지",
+  "record.status": "녹화 중 {time}",
+  "record.failed": "화면 녹화에 실패했습니다",
+  "record.uploadFailed": "녹화를 업로드하지 못했습니다. 피드백은 녹화 없이 전송되었습니다.",
   "feedback.deleted.confirmation": "피드백을 삭제했습니다",
 
   // Badge

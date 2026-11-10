@@ -50,6 +50,7 @@ export type CommentResponse = Prettify<Serialized<Omit<CommentRecord, "clientId"
 }>;
 
 export interface DiagnosticsCaptureOptions {
+    components?: boolean | undefined;
     console?: boolean | undefined;
     maxConsoleEntries?: number | undefined;
     maxNetworkEntries?: number | undefined;
@@ -57,8 +58,10 @@ export interface DiagnosticsCaptureOptions {
 }
 
 export interface DiagnosticsSnapshot {
+    components?: string[] | undefined;
     console: ConsoleDiagnosticEntry[];
     network: NetworkDiagnosticEntry[];
+    recording?: RecordingInfo | undefined;
 }
 
 export interface FeedbackPayload {
@@ -102,11 +105,23 @@ export interface PageScope {
     urlPattern: null | string;
 }
 
+export interface RecordingInfo {
+    bytes: number;
+    durationMs: number;
+    mimeType: "video/mp4" | "video/webm";
+    url: string;
+}
+
 export interface RectData {
     hPct: number;
     wPct: number;
     xPct: number;
     yPct: number;
+}
+
+export interface ScreenRecordingOptions {
+    maxBytes?: number | undefined;
+    maxDurationMs?: number | undefined;
 }
 
 export interface ScreenshotRegion {
@@ -270,6 +285,15 @@ export interface Translations {
     "detail.status": string;
     "detail.title": string;
     "detail.viewport": string;
+    "editor.arrow": string;
+    "editor.blur": string;
+    "editor.cancel": string;
+    "editor.canvasAria": string;
+    "editor.done": string;
+    "editor.pen": string;
+    "editor.rect": string;
+    "editor.title": string;
+    "editor.undo": string;
     "export.csv": string;
     "export.json": string;
     "export.label": string;
@@ -279,6 +303,7 @@ export interface Translations {
     "fab.badge": string;
     "fab.flowFinish": string;
     "fab.messages": string;
+    "fab.record": string;
     "feedback.deleted.confirmation": string;
     "feedback.error.message": string;
     "feedback.sent.confirmation": string;
@@ -332,11 +357,19 @@ export interface Translations {
     "panel.title": string;
     "popup.ariaLabel": string;
     "popup.cancel": string;
+    "popup.markup": string;
+    "popup.markupDone": string;
     "popup.placeholder": string;
+    "popup.recording": string;
+    "popup.recordingRemove": string;
     "popup.submit": string;
     "popup.submitHintMac": string;
     "popup.submitHintOther": string;
     "popup.textareaAria": string;
+    "record.failed": string;
+    "record.status": string;
+    "record.stop": string;
+    "record.uploadFailed": string;
     "scope.all": string;
     "scope.label": string;
     "scope.thisPage": string;
@@ -632,6 +665,7 @@ interface SitepingBaseConfig {
     debug?: boolean | undefined;
     deepLink?: SitepingDeepLinkOptions | boolean | undefined;
     enableRightClickComment?: boolean | undefined;
+    enableScreenRecording?: ScreenRecordingOptions | boolean | undefined;
     enableScreenshot?: boolean | undefined;
     forceShow?: boolean | undefined;
     getPageScope?: (() => PageScope) | undefined;
@@ -651,6 +685,7 @@ interface SitepingBaseConfig {
     projectName: string;
     readOnly?: boolean | undefined;
     scopeAnnotationsByUrl?: boolean | undefined;
+    screenshotEditor?: boolean | undefined;
     showAnnotationsToggle?: boolean | undefined;
     theme?: SitepingTheme | undefined;
     watchNavigation?: boolean | undefined;

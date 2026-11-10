@@ -5,6 +5,7 @@ import {
   flattenAnnotation,
   isStoreDuplicate,
   isStoreValueTooLong,
+  type RecordingStorage,
   type SitepingStore,
 } from "@siteping/core";
 import { ERROR_MESSAGES, MAX_ANNOTATIONS_PER_FEEDBACK } from "../constants.js";
@@ -19,6 +20,7 @@ interface CreateFeedbackDependencies<Principal> {
   notify: Notify<Principal>;
   beforeCreate: SitepingHandlerBaseOptions<Principal>["beforeCreate"];
   onCreated: SitepingLifecycleHooks<Principal>["onCreated"];
+  recordingStorage: RecordingStorage | undefined;
 }
 
 const FAILED_TO_CREATE = "[siteping] Failed to create feedback";
@@ -30,7 +32,7 @@ interface CreateOutcome {
 }
 
 /** Store input from the validated payload — the store never sees wire-only shapes. */
-function toCreateInput(data: FeedbackPayload): FeedbackCreateInput {
+function toCreateInput(data: FeedbackPayload, recordingStorage: RecordingStorage | undefined): FeedbackCreateInput {
   return {
     projectName: data.projectName,
     type: data.type,
@@ -46,12 +48,32 @@ function toCreateInput(data: FeedbackPayload): FeedbackCreateInput {
     annotations: data.annotations.map(flattenAnnotation),
     screenshotDataUrl: data.screenshotDataUrl ?? null,
     screenshotRegion: data.screenshotRegion ?? null,
-    diagnostics: data.diagnostics ?? null,
+    diagnostics: data.diagnostics ? keepOwnRecording(data.diagnostics, recordingStorage) : null,
     flowId: data.flowId ?? null,
     flowStep: data.flowStep ?? null,
     // A blank title (trimmed by the schema) is an untitled flow.
     flowTitle: data.flowTitle || null,
   };
+}
+
+/**
+ * The diagnostics without a `recording` the storage does not recognise as
+ * its own: a client names the URL, so any other one — or any at all without
+ * a `recordingStorage` — is dropped rather than stored for reviewers to open.
+ */
+function keepOwnRecording(
+  diagnostics: NonNullable<FeedbackPayload["diagnostics"]>,
+  recordingStorage: RecordingStorage | undefined,
+): NonNullable<FeedbackPayload["diagnostics"]> {
+  const { recording, ...rest } = diagnostics;
+  if (!recording) return diagnostics;
+  let own = false;
+  try {
+    own = recordingStorage?.isOwnUrl(recording.url) === true;
+  } catch {
+    // A throwing predicate owns nothing.
+  }
+  return own ? diagnostics : rest;
 }
 
 /** `POST` — create a feedback, idempotent on `clientId`. */
@@ -61,6 +83,7 @@ export function createFeedbackOperation<Principal>({
   notify,
   beforeCreate,
   onCreated,
+  recordingStorage,
 }: CreateFeedbackDependencies<Principal>) {
   /**
    * Creates in flight, keyed by clientId. The widget aborts an attempt after
@@ -104,7 +127,7 @@ export function createFeedbackOperation<Principal>({
 
     let input: FeedbackCreateInput;
     try {
-      const validated = toCreateInput(payload.value);
+      const validated = toCreateInput(payload.value, recordingStorage);
       input = beforeCreate ? await beforeCreate(validated, scope.context) : validated;
       const refusal = await pipeline.authorize(scope, { action: "create", projectName: input.projectName });
       if (refusal) return refusal;

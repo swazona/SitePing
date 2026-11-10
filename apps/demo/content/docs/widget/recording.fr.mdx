@@ -1,0 +1,71 @@
+---
+title: Enregistrement d'écran
+description: Laissez les relecteurs enregistrer ce qu'ils ont fait, et joignez la vidéo à leur feedback.
+---
+
+Certains bugs sont une suite d'étapes, pas un endroit : un clignotement, une étape qui défait la précédente, un formulaire qui perd ce qu'on a tapé. Avec `enableScreenRecording`, le menu du bouton flottant propose **Enregistrer l'écran** :
+
+```ts
+initSiteping({
+  endpoint: "/api/siteping",
+  projectName: "mon-projet",
+  enableScreenRecording: true, // ou { maxDurationMs: 30_000, maxBytes: 4 * 1024 * 1024 }
+});
+```
+
+1. Le navigateur demande quoi partager. Chromium propose d'abord l'onglet courant (`preferCurrentTab`) ; les autres navigateurs affichent leur sélecteur habituel.
+2. Un indicateur d'enregistrement s'affiche en bas de la page avec le temps écoulé et **Arrêter l'enregistrement**. L'enregistrement s'arrête aussi à la durée maximale (60 s par défaut), juste avant la taille maximale (8 Mio par défaut), ou quand le relecteur arrête le partage depuis les contrôles du navigateur.
+3. Le mode annotation démarre : le relecteur désigne ce que montre l'enregistrement et écrit son feedback comme d'habitude. Le formulaire affiche l'enregistrement en **Enregistrement (0:12) ✕** ; l'activer détache la vidéo.
+4. À l'envoi, la vidéo part d'abord, puis le feedback la référence dans `diagnostics.recording` : `{ url, mimeType, durationMs, bytes }`.
+
+L'enregistreur est un chunk séparé (environ 1,6 kB gzippé), chargé au premier enregistrement. La vidéo n'a pas de son.
+
+## Quand l'action est proposée
+
+Toutes ces conditions, sinon l'action n'apparaît pas :
+
+- `enableScreenRecording` est défini, en mode HTTP (`endpoint`) — le mode `store` n'a nulle part où envoyer une vidéo ;
+- le navigateur sait enregistrer son écran : `navigator.mediaDevices.getDisplayMedia` et `MediaRecorder`. Chrome, Edge, Firefox et Safari sur ordinateur le savent ; Safari sur iOS et la plupart des navigateurs mobiles, non ;
+- la réponse de liste de l'endpoint annonce `capabilities.recordings` — un serveur configuré avec un `recordingStorage` (ci-dessous). Un serveur plus ancien, ou sans lui, n'annonce rien, et rien ne change.
+
+## Comment un enregistrement arrive au stockage
+
+Une capture d'écran voyage dans le JSON du feedback, en data URL d'un mégaoctet au plus. Une minute de vidéo d'écran en pèse plusieurs, au-delà de la limite du corps JSON (`maxBodyBytes`), et le base64 ajouterait un tiers. Un enregistrement fait donc l'objet d'une étape à part, avant le feedback :
+
+```http
+POST /api/siteping?projectName=mon-projet&clientId=<le clientId du feedback>
+Content-Type: video/webm
+
+<les octets de la vidéo>
+```
+
+Le serveur applique la même règle d'accès qu'une création (`action: "create"` sur ce projet), refuse au-delà de `maxRecordingBytes` (16 Mio par défaut) avec un `413`, lit le type dans les premiers octets du fichier (WebM ou MP4, quoi que dise le `Content-Type`), et confie les octets à votre `recordingStorage`. Il répond `201 { url }`, et le feedback envoyé ensuite porte cette URL dans `diagnostics.recording`. Le serveur ne la garde que si `recordingStorage.isOwnUrl(url)` reconnaît une URL qu'il a produite : un client ne peut pas joindre n'importe quelle adresse.
+
+`RecordingStorage` tient en deux fonctions — ici sur un bucket S3 :
+
+```ts
+import { createSitepingHandler, type RecordingStorage } from "@siteping/server";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({ region: "eu-west-3" });
+const base = "https://cdn.example.com/";
+
+const recordingStorage: RecordingStorage = {
+  async upload(bytes, { mimeType }) {
+    const key = `siteping-recordings/${crypto.randomUUID()}`; // une clé neuve par envoi
+    await s3.send(new PutObjectCommand({ Bucket: "mon-bucket", Key: key, Body: bytes, ContentType: mimeType }));
+    return { url: `${base}${key}` };
+  },
+  isOwnUrl: (url) => url.startsWith(`${base}siteping-recordings/`),
+};
+
+export const { GET, POST, PATCH, DELETE, OPTIONS } = createSitepingHandler({ store, recordingStorage });
+```
+
+L'enregistrement en base ne garde que l'URL : `diagnostics` est la colonne JSON que tous les stores enregistrent déjà, aucune migration n'est nécessaire. Supprimer un feedback ne supprime pas sa vidéo ; faites expirer le préfixe avec une règle de cycle de vie du bucket si besoin.
+
+Si l'envoi échoue sur le réseau, le feedback et sa vidéo attendent ensemble dans la [file hors ligne](/fr/docs/widget#la-fiabilité-sans-rien-faire) et partent ensemble plus tard. Si le serveur refuse la vidéo (trop grande, pas une vidéo), le feedback part sans elle et le widget le signale.
+
+## Confidentialité
+
+Un enregistrement montre tout ce que le relecteur partage — l'écran entier, s'il le choisit. Le [masquage](/fr/docs/widget/screenshots#masquer-les-données-sensibles) `data-siteping-ignore` s'applique aux captures d'écran, que le widget dessine lui-même ; il ne peut rien sur une vidéo enregistrée par le navigateur. Prévenez les relecteurs de ce que contient un enregistrement avant de l'activer.

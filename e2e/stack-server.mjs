@@ -11,6 +11,8 @@
  *   /api/siteping-keyed → the same store behind `apiKey: "e2e-key"`, reads
  *                     and submissions left public: what a visitor and the
  *                     key holder are each allowed to do.
+ *   /api/siteping-rec → the same store with a `recordingStorage` kept in
+ *                     memory, served back at /__e2e/recordings/<n>.
  *   /               → a page running the widget in HTTP mode against it;
  *                     `/flow/<n>` serves the same page, for a multi-page flow.
  *   /inbox          → `<SitepingInbox />` (dashboard) against the same API,
@@ -62,6 +64,21 @@ const keyedHandler = createSitepingHandler({
   publicEndpoints: ["GET", "POST", "OPTIONS"],
 });
 
+/** Screen recordings uploaded to /api/siteping-rec, by URL. */
+const recordings = new Map();
+const recordingHandler = createSitepingHandler({
+  store,
+  requireAuthForDestructive: false,
+  recordingStorage: {
+    async upload(bytes, { mimeType }) {
+      const url = `${ORIGIN}/__e2e/recordings/${recordings.size + 1}`;
+      recordings.set(url, { bytes, mimeType });
+      return { url };
+    },
+    isOwnUrl: (url) => recordings.has(url),
+  },
+});
+
 const widgetDist = join(pkg("widget"), "dist");
 
 const inboxBundle = (
@@ -107,6 +124,10 @@ function widgetPage(params) {
     // Accessibility checks run in both themes (a11y.spec.ts).
     ...(params.get("theme") === "dark" ? { theme: "dark" } : {}),
     ...(diag ? { captureDiagnostics: { maxConsoleEntries: diag, maxNetworkEntries: diag } } : {}),
+    // ?rec=1: "Record screen", against the endpoint that takes recordings.
+    ...(params.get("rec") === "1"
+      ? { endpoint: "/api/siteping-rec", enableScreenRecording: { maxDurationMs: 4000 } }
+      : {}),
   };
   return `<!DOCTYPE html>
 <html lang="en"${rtl ? ' dir="rtl"' : ""}>
@@ -169,6 +190,12 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === "/api/siteping") return await callHandler(handler, req, res, url);
     if (url.pathname === "/api/siteping-keyed") return await callHandler(keyedHandler, req, res, url);
+    if (url.pathname === "/api/siteping-rec") return await callHandler(recordingHandler, req, res, url);
+    const recording = recordings.get(`${ORIGIN}${url.pathname}`);
+    if (recording) {
+      res.writeHead(200, { "Content-Type": recording.mimeType }).end(Buffer.from(recording.bytes));
+      return;
+    }
 
     if (url.pathname === "/__e2e/webhook" && req.method === "POST") {
       webhookLog.push(JSON.parse((await readBody(req)).toString("utf-8")));

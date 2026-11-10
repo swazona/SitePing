@@ -58,6 +58,7 @@ export const fr: Translations = {
   "fab.aria": "Siteping \u2014 Menu feedback",
   "fab.messages": "Afficher la barre latérale",
   "fab.annotate": "Créer une nouvelle annotation",
+  "fab.record": "Enregistrer l'écran",
   "fab.annotations": "Afficher ou masquer les marqueurs",
   "fab.flowStart": "Démarrer un parcours",
   "fab.flowFinish": "Terminer le parcours",
@@ -87,6 +88,20 @@ export const fr: Translations = {
   "popup.submitHintOther": "Ctrl+Entr\u00e9e pour envoyer",
   "popup.cancel": "Annuler",
   "popup.submit": "Envoyer",
+  "popup.markup": "Annoter la capture",
+  "popup.markupDone": "Capture annotée",
+  "popup.recording": "Enregistrement ({duration})",
+  "popup.recordingRemove": "Retirer l'enregistrement",
+  "editor.title": "Annoter la capture",
+  "editor.pen": "Crayon",
+  "editor.arrow": "Flèche",
+  "editor.rect": "Surligner",
+  "editor.blur": "Masquer",
+  "editor.undo": "Annuler le dernier",
+  "editor.cancel": "Annuler",
+  "editor.done": "Terminé",
+  "editor.canvasAria":
+    "Capture d'écran. Faites glisser pour dessiner avec l'outil choisi. Au clavier : les flèches déplacent, Entrée commence et termine une forme.",
 
   // Identity modal
   "identity.title": "Identifiez-vous",
@@ -108,7 +123,11 @@ export const fr: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Feedback envoyé avec succès",
   "feedback.error.message": "Échec de l'envoi du feedback",
-  "feedback.queued": "Enregistré sur cet appareil. Il sera envoyé à votre prochaine visite.",
+  "feedback.queued": "Enregistré sur cet appareil. Il sera envoyé dès le retour de la connexion.",
+  "record.stop": "Arrêter l'enregistrement",
+  "record.status": "Enregistrement {time}",
+  "record.failed": "L'enregistrement de l'écran a échoué",
+  "record.uploadFailed": "L'enregistrement n'a pas pu être envoyé ; le retour a été envoyé sans lui.",
   "feedback.deleted.confirmation": "Feedback supprimé",
 
   // Badge

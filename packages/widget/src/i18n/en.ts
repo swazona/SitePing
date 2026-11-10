@@ -58,6 +58,7 @@ export const en: Translations = {
   "fab.aria": "Siteping \u2014 Feedback menu",
   "fab.messages": "Show sidebar",
   "fab.annotate": "Create new annotation",
+  "fab.record": "Record screen",
   "fab.annotations": "Show or hide markers",
   "fab.flowStart": "Start a flow",
   "fab.flowFinish": "Finish the flow",
@@ -87,6 +88,20 @@ export const en: Translations = {
   "popup.submitHintOther": "Ctrl+Enter to send",
   "popup.cancel": "Cancel",
   "popup.submit": "Send",
+  "popup.markup": "Mark up screenshot",
+  "popup.markupDone": "Screenshot marked up",
+  "popup.recording": "Recording ({duration})",
+  "popup.recordingRemove": "Remove the recording",
+  "editor.title": "Mark up screenshot",
+  "editor.pen": "Pen",
+  "editor.arrow": "Arrow",
+  "editor.rect": "Highlight",
+  "editor.blur": "Redact",
+  "editor.undo": "Undo",
+  "editor.cancel": "Cancel",
+  "editor.done": "Done",
+  "editor.canvasAria":
+    "Screenshot. Drag to draw with the selected tool. With the keyboard: arrow keys move, Enter starts and ends a shape.",
 
   // Identity modal
   "identity.title": "Identify yourself",
@@ -108,7 +123,11 @@ export const en: Translations = {
   // Accessibility — screen reader announcements
   "feedback.sent.confirmation": "Feedback sent successfully",
   "feedback.error.message": "Failed to send feedback",
-  "feedback.queued": "Saved on this device. It will be sent on your next visit.",
+  "feedback.queued": "Saved on this device. It will be sent when you are back online.",
+  "record.stop": "Stop recording",
+  "record.status": "Recording {time}",
+  "record.failed": "Screen recording failed",
+  "record.uploadFailed": "The recording could not be uploaded; the feedback was sent without it.",
   "feedback.deleted.confirmation": "Feedback deleted",
 
   // Badge

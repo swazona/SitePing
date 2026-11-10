@@ -182,8 +182,10 @@ export type ConsoleDiagnosticLevel = (typeof CONSOLE_DIAGNOSTIC_LEVELS)[number];
 export const DEFAULT_PAGE_LIMIT = 50;
 
 export interface DiagnosticsSnapshot {
+    components?: string[] | undefined;
     console: ConsoleDiagnosticEntry[];
     network: NetworkDiagnosticEntry[];
+    recording?: RecordingInfo | undefined;
 }
 
 export const FEEDBACK_STATUSES: readonly [
@@ -387,6 +389,7 @@ export type Serialized<T> = {
 export interface SitepingCapabilities {
     comments: boolean;
     deleteComments?: boolean | undefined;
+    recordings?: boolean | undefined;
 }
 
 export interface SitepingStore {
@@ -494,6 +497,13 @@ interface CommentPermissions {
 type Prettify<T> = {
     [K in keyof T]: T[K];
 } & {};
+
+interface RecordingInfo {
+    bytes: number;
+    durationMs: number;
+    mimeType: "video/mp4" | "video/webm";
+    url: string;
+}
 ```
 
 ## @siteping/adapter-kit/testing

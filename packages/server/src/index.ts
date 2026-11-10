@@ -13,6 +13,8 @@ export type {
   FeedbackResponseList,
   FeedbackStatus,
   FeedbackType,
+  RecordingInfo,
+  RecordingStorage,
   ScreenshotRegion,
   SitepingCapabilities,
   SitepingConfigErrorCode,
