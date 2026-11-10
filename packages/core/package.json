@@ -13,6 +13,9 @@
     },
     "./testing": {
       "default": "./src/testing.ts"
+    },
+    "./report": {
+      "default": "./src/report.ts"
     }
   },
   "author": "neosianexus",

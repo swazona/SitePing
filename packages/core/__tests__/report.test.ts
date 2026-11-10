@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { FeedbackRecord, FeedbackResponse } from "../src/index.js";
 import {
   buildFeedbackReport,
-  type FeedbackRecord,
-  type FeedbackResponse,
   formatFeedbackReport,
   REPORT_FORMATS,
   REPORT_SECTIONS,
   type ReportFeedbackInput,
-} from "../src/index.js";
+} from "../src/report.js";
 
 function record(overrides: Partial<FeedbackRecord> = {}): FeedbackRecord {
   return {

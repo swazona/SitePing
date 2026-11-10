@@ -25,26 +25,6 @@ export { canonicalizeLocale, createI18n, interpolate, intlLocale, tWithParams } 
 export type { SitepingLogger, SitepingWarnLogger } from "./logger.js";
 export { warnSafely } from "./logger.js";
 export type {
-  FeedbackReport,
-  RedactableField,
-  ReportAnchor,
-  ReportAnnotationInput,
-  ReportComment,
-  ReportCommentInput,
-  ReportFeedbackInput,
-  ReportFormat,
-  ReportOptions,
-  ReportRedaction,
-  ReportSection,
-} from "./report.js";
-export {
-  buildFeedbackReport,
-  formatFeedbackReport,
-  REDACTABLE_FIELDS,
-  REPORT_FORMATS,
-  REPORT_SECTIONS,
-} from "./report.js";
-export type {
   FieldDef,
   IndexDef,
   ModelDef,
