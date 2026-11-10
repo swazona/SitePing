@@ -201,6 +201,19 @@ const INVISIBLE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 
+/** Every line terminator a viewer may honour: CRLF, LF, CR, VT, FF, NEL, LS, PS. */
+const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\u2028\u2029]/g;
+
+/** Line terminators as `\n` and invisible characters out — what every free-text value goes through. */
+function normalizeText(value: string): string {
+  return value.replace(LINE_BREAK, "\n").replace(INVISIBLE, "");
+}
+
+/** `value` on one line: every line terminator shown as ↵, invisible characters out. */
+function flatten(value: string): string {
+  return value.replace(LINE_BREAK, " ↵ ").replace(INVISIBLE, "");
+}
+
 const EMAIL = /[\p{L}\p{M}\p{N}._%+-]+@(?:[\p{L}\p{M}\p{N}-]+\.)+[\p{L}\p{M}]{2,}/gu;
 
 /** Tokens recognisable by their shape alone. */
@@ -251,7 +264,7 @@ function createRedactor(redaction: ReportRedaction = {}): Redactor {
   const { emails = false, secrets = true, queryStrings = false, fields = [] } = redaction;
   const blanked = new Set(fields);
   const text = (value: string): string => {
-    let out = value.replace(INVISIBLE, "");
+    let out = normalizeText(value);
     if (secrets) {
       out = out.replace(AUTH_SCHEME, `$1 ${SECRET}`);
       for (const shape of SECRET_SHAPES) out = out.replace(shape, SECRET);
@@ -292,12 +305,14 @@ export function buildFeedbackReport(feedback: ReportFeedbackInput, options: Repo
     r.blanks(name) ? REDACTED : r[kind](value);
 
   const report: FeedbackReport = {
-    id: feedback.id,
-    type: feedback.type,
-    status: feedback.status,
+    // Not redacted (an id or a date is no secret), but normalized like
+    // every other value: the store's types are not a guarantee.
+    id: normalizeText(feedback.id),
+    type: normalizeText(feedback.type) as FeedbackType,
+    status: normalizeText(feedback.status) as FeedbackStatus,
     project: r.text(feedback.projectName),
-    createdAt: toIso(feedback.createdAt),
-    resolvedAt: feedback.resolvedAt ? toIso(feedback.resolvedAt) : null,
+    createdAt: normalizeText(toIso(feedback.createdAt)),
+    resolvedAt: feedback.resolvedAt ? normalizeText(toIso(feedback.resolvedAt)) : null,
     message: r.text(feedback.message),
   };
   if (isOn(options, "author")) {
@@ -355,8 +370,8 @@ export function buildFeedbackReport(feedback: ReportFeedbackInput, options: Repo
   if (isOn(options, "thread")) {
     report.thread = (feedback.comments ?? []).map((comment) => ({
       author: r.blanks("commentAuthors") ? REDACTED : r.text(comment.authorName),
-      role: comment.authorRole,
-      createdAt: toIso(comment.createdAt),
+      role: normalizeText(comment.authorRole) as CommentAuthorRole,
+      createdAt: normalizeText(toIso(comment.createdAt)),
       body: r.text(comment.body),
     }));
   }
@@ -375,13 +390,14 @@ function longestBacktickRun(value: string): number {
 
 /** A fenced block holding `value` verbatim: its fence is longer than any backtick run inside. */
 function fenced(value: string, info = "text"): string {
-  const fence = "`".repeat(Math.max(3, longestBacktickRun(value) + 1));
-  return `${fence}${info}\n${value}\n${fence}`;
+  const body = normalizeText(value);
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(body) + 1));
+  return `${fence}${info}\n${body}\n${fence}`;
 }
 
 /** `value` as a one-line code span, its newlines shown as ↵. */
 function code(value: string): string {
-  const line = value.replace(/\r\n|\r|\n/g, " ↵ ");
+  const line = flatten(value);
   if (line.trim() === "") return "(empty)";
   const ticks = "`".repeat(longestBacktickRun(line) + 1);
   const pad = line.startsWith("`") || line.endsWith("`") ? " " : "";
@@ -391,8 +407,8 @@ function code(value: string): string {
 /** Plain text: every line of `value` behind a `| ` gutter. */
 function gutter(value: string, indent = "  "): string {
   return value
-    .split(/\r\n|\r|\n/)
-    .map((line) => `${indent}| ${line}`)
+    .split(LINE_BREAK)
+    .map((line) => `${indent}| ${line.replace(INVISIBLE, "")}`)
     .join("\n");
 }
 
@@ -440,7 +456,7 @@ function pct(value: number): string {
 }
 
 function oneLine(value: string): string {
-  return value.replace(/\r\n|\r|\n/g, " ↵ ");
+  return flatten(value);
 }
 
 /** How a renderer prints a value that failed validation. */
