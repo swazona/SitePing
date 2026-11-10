@@ -24,7 +24,7 @@ export interface IssueWebhookStore {
 
 /** A feedback status a tracker webhook changed. */
 export interface IssueStatusSync {
-  /** The tracker's name: `GitHub`, `Linear`, `Jira`, `Plane`. */
+  /** The tracker's name: `GitHub`, `Linear`, `Jira`, `Plane`, `ClickUp`. */
   tracker: string;
   issue: IssueReference;
   /** The status before, when the store could read it (`getFeedback`). */

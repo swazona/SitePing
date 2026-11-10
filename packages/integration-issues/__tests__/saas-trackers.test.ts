@@ -3,10 +3,17 @@ import type { FeedbackResponse } from "@siteping/core";
 import { createSitepingHandler } from "@siteping/server";
 import { describe, expect, it, vi } from "vitest";
 import { createIssueTrackerHooks, type ReadableIssueTracker } from "../src/index.js";
+import { createClickUpTracker } from "../src/providers/clickup.js";
 import { createJiraTracker } from "../src/providers/jira.js";
 import { createLinearTracker } from "../src/providers/linear.js";
 import { createPlaneTracker } from "../src/providers/plane.js";
-import { createFakeJira, createFakeLinear, createFakePlane, type SaasFake } from "./fake-saas-trackers.js";
+import {
+  createFakeClickUp,
+  createFakeJira,
+  createFakeLinear,
+  createFakePlane,
+  type SaasFake,
+} from "./fake-saas-trackers.js";
 
 const ENDPOINT = "http://localhost/api/siteping";
 const API_KEY = "server-key";
@@ -61,6 +68,20 @@ export const saasProviders: ProviderUnderTest[] = [
       createPlaneTracker({ workspaceSlug: "acme", projectId: "proj-1", apiKey: TOKEN, fetch: fake.fetch }),
     stateOf: (status) =>
       ({ open: "unstarted", in_progress: "started", resolved: "completed", wont_fix: "cancelled" })[status],
+  },
+  {
+    name: "ClickUp",
+    createFake: () => createFakeClickUp("list-1", "ws-1"),
+    createTracker: (fake) =>
+      createClickUpTracker({
+        listId: "list-1",
+        workspaceId: "ws-1",
+        token: TOKEN,
+        statuses: { wont_fix: "Won't Fix" },
+        fetch: fake.fetch,
+      }),
+    stateOf: (status) =>
+      ({ open: "to do", in_progress: "in progress", resolved: "complete", wont_fix: "won't fix" })[status],
   },
 ];
 
@@ -191,7 +212,9 @@ for (const provider of saasProviders) {
                   email: "a@b.c",
                   apiToken: token,
                 })
-              : createPlaneTracker({ workspaceSlug: "a", projectId: "p", apiKey: token });
+              : provider.name === "Plane"
+                ? createPlaneTracker({ workspaceSlug: "a", projectId: "p", apiKey: token })
+                : createClickUpTracker({ listId: "l", workspaceId: "w", token });
         expect(create).toThrow(/token must be a non-empty string of visible ASCII/);
         expect(create).not.toThrow(/SECRET/);
       }
@@ -454,5 +477,206 @@ describe("Plane tracker", () => {
     });
 
     expect(await tracker.getIssue("nope")).toBeNull();
+  });
+});
+
+describe("ClickUp tracker", () => {
+  const clickUp = (fake: SaasFake, options: Partial<Parameters<typeof createClickUpTracker>[0]> = {}) =>
+    createClickUpTracker({ listId: "list-1", workspaceId: "ws-1", token: TOKEN, fetch: fake.fetch, ...options });
+  const marker = '<!-- siteping-feedback {"id":"f","project":"site"} -->';
+
+  it("sends a personal token as is, an OAuth token as Bearer, to the v2 API", async () => {
+    const fake = createFakeClickUp();
+    await clickUp(fake).getIssue("cu1");
+    await clickUp(fake, { tokenType: "oauth" }).getIssue("cu1");
+
+    expect(fake.requests.map((request) => request.headers.get("authorization"))).toEqual([TOKEN, `Bearer ${TOKEN}`]);
+    expect(fake.requests[0]?.path).toBe("/api/v2/task/cu1?include_markdown_description=true");
+  });
+
+  it("creates a tagged task in the list with a Markdown description, its marker as a code span", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+
+    const reference = await tracker.createIssue({
+      title: "[SitePing] t",
+      body: `${marker}\n\n## Message\n\n\`\`\`text\n@everyone <script>\n\`\`\``,
+      labels: ["siteping", "Needs Triage"],
+    });
+
+    expect(reference).toEqual({ key: "cu1", url: "https://app.clickup.com/t/cu1" });
+    const created = fake.requests.find((request) => request.method === "POST");
+    expect(created?.path).toBe("/api/v2/list/list-1/task");
+    expect(created?.body).toEqual({
+      name: "[SitePing] t",
+      markdown_content: `\`${marker}\`\n\n## Message\n\n\`\`\`text\n@everyone <script>\n\`\`\``,
+      description: `\`${marker}\`\n\n## Message\n\n\`\`\`text\n@everyone <script>\n\`\`\``,
+      tags: ["siteping", "Needs Triage"],
+    });
+    const read = await tracker.getIssue("cu1");
+    expect(read).toMatchObject({ reference, isOpen: true });
+    expect(read?.body.split("\n")[0]).toBe(marker);
+  });
+
+  it("reads the marker from the plain-text description when the Markdown one lacks it", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+    await tracker.createIssue({ title: "t", body: `${marker}\n\nBody`, labels: ["siteping"] });
+    const issue = fake.issues[0] as SaasFake["issues"][number];
+    const plain = fake.fetch;
+    // A ClickUp that answers no `markdown_description`.
+    const withoutMarkdown: typeof fetch = async (input, init) => {
+      const response = await plain(input, init);
+      const json = await response.json();
+      delete json.markdown_description;
+      return Response.json(json, { status: response.status });
+    };
+
+    const read = await clickUp({ ...fake, fetch: withoutMarkdown }).getIssue(issue.key);
+
+    expect(read?.body.split("\n")[0]).toBe(marker);
+  });
+
+  it("raises when ClickUp dropped the siteping tag", async () => {
+    const fake = createFakeClickUp();
+    const dropTags: typeof fetch = async (input, init) => {
+      const response = await fake.fetch(input, init);
+      const json = await response.json();
+      return Response.json({ ...json, tags: [] });
+    };
+
+    await expect(
+      clickUp({ ...fake, fetch: dropTags }).createIssue({ title: "t", body: "b", labels: ["siteping"] }),
+    ).rejects.toMatchObject({ code: "UNLABELLED_ISSUE" });
+  });
+
+  it("moves tasks by the list's status types without names, and by the configured names otherwise", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+    const { key } = await tracker.createIssue({ title: "t", body: "b", labels: [] });
+    const statusOf = () => fake.issues[0]?.stateKind;
+
+    await tracker.updateIssueStatus({ key, url: "" }, "in_progress");
+    expect(statusOf()).toBe("in progress");
+    await tracker.updateIssueStatus({ key, url: "" }, "resolved");
+    expect(statusOf()).toBe("complete");
+    await tracker.updateIssueStatus({ key, url: "" }, "wont_fix");
+    expect(statusOf()).toBe("complete");
+    await tracker.updateIssueStatus({ key, url: "" }, "open");
+    expect(statusOf()).toBe("to do");
+
+    const named = clickUp(fake, { statuses: { wont_fix: "WON'T FIX" } });
+    await named.updateIssueStatus({ key, url: "" }, "wont_fix");
+    expect(statusOf()).toBe("won't fix");
+    expect(fake.requests.at(-1)?.body).toEqual({ status: "won't fix" });
+    // The list's statuses are read once per tracker.
+    expect(fake.requests.filter((request) => request.path === "/api/v2/list/list-1")).toHaveLength(2);
+  });
+
+  it("tells won't-fix tasks apart only with a named won't-fix status", async () => {
+    const fake = createFakeClickUp();
+    await clickUp(fake).createIssue({ title: "t", body: marker, labels: ["siteping"] });
+    const issue = fake.issues[0] as SaasFake["issues"][number];
+
+    issue.stateKind = "won't fix";
+    expect(await clickUp(fake).getIssue(issue.key)).toMatchObject({ isOpen: false });
+    expect((await clickUp(fake).getIssue(issue.key))?.closedAs).toBeUndefined();
+    const named = clickUp(fake, { statuses: { wont_fix: "won't fix" } });
+    expect((await named.getIssue(issue.key))?.closedAs).toBe("wont_fix");
+    issue.stateKind = "complete";
+    expect((await named.getIssue(issue.key))?.closedAs).toBe("resolved");
+  });
+
+  it("comments without notifying, and lists every comment across pages of 25", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+    const { key } = await tracker.createIssue({ title: "t", body: "b", labels: [] });
+    for (let index = 0; index < 60; index++) await tracker.addComment({ key, url: "" }, `comment ${index}`);
+
+    const comments = await tracker.listComments({ key, url: "" });
+
+    expect(fake.requests.find((request) => request.path.endsWith("/comment"))?.body).toEqual({
+      comment_text: "comment 0",
+      notify_all: false,
+    });
+    expect(comments).toHaveLength(60);
+    expect(comments[0]).toBe("comment 59");
+    expect(comments.at(-1)).toBe("comment 0");
+  });
+
+  it("lists the list's tagged tasks, closed ones included, and says when pages are left", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake, { maxListedPages: 1 });
+    for (let index = 0; index < 101; index++) {
+      await tracker.createIssue({ title: "t", body: marker, labels: ["siteping"] });
+    }
+    (fake.issues[100] as SaasFake["issues"][number]).stateKind = "complete";
+
+    const listing = await tracker.findSitepingIssues('"id":"f"');
+
+    expect(listing.issues).toHaveLength(100);
+    expect(listing.issues[0]).toMatchObject({ reference: { key: "cu101" }, isOpen: false });
+    expect(listing.truncated).toBe(true);
+    expect(fake.requests.at(-1)?.path).toContain("include_closed=true");
+    expect(fake.requests.at(-1)?.path).toContain("tags%5B%5D=siteping");
+  });
+
+  it("never reads a task of another list or workspace as a SitePing task, tag and marker notwithstanding", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+    await tracker.createIssue({ title: "t", body: marker, labels: ["siteping"] });
+    await tracker.createIssue({ title: "t", body: marker, labels: ["siteping"] });
+    const [otherList, otherWorkspace] = fake.issues as [SaasFake["issues"][number], SaasFake["issues"][number]];
+    otherList.scope = "list-2";
+    otherWorkspace.workspace = "ws-2";
+    // A list endpoint that answers tasks of other lists too (tasks in multiple lists).
+    const leaky: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname !== "/api/v2/list/list-1/task" || init?.method !== "GET") return fake.fetch(input, init);
+      const tasks = await Promise.all(
+        fake.issues.map(async (issue) =>
+          (
+            await fake.fetch(`https://api.clickup.com/api/v2/task/${issue.key}?include_markdown_description=true`, {
+              headers: { Authorization: TOKEN },
+            })
+          ).json(),
+        ),
+      );
+      return Response.json({ tasks, last_page: true });
+    };
+
+    expect(await tracker.getIssue(otherList.key)).toBeNull();
+    expect(await tracker.getIssue(otherWorkspace.key)).toBeNull();
+    expect((await clickUp({ ...fake, fetch: leaky }).findSitepingIssues('"id":"f"')).issues).toEqual([]);
+  });
+
+  it("answers null for an unknown task, an untagged one, and a key that is no task id without asking ClickUp", async () => {
+    const fake = createFakeClickUp();
+    const tracker = clickUp(fake);
+    await tracker.createIssue({ title: "t", body: marker, labels: [] });
+
+    expect(await tracker.getIssue("nope")).toBeNull();
+    expect(await tracker.getIssue("cu1")).toBeNull();
+    const before = fake.requests.length;
+    expect(await tracker.getIssue("../list/list-1")).toBeNull();
+    expect(fake.requests).toHaveLength(before);
+  });
+
+  it("raises other failures as failed requests", async () => {
+    const fake = createFakeClickUp();
+    fake.failWhen(/GET \/api\/v2\/task/, 401);
+
+    await expect(clickUp(fake).getIssue("cu1")).rejects.toMatchObject({
+      code: "ISSUE_TRACKER_REQUEST_FAILED",
+      status: 401,
+    });
+  });
+
+  it("refuses a list or workspace id that could not work", () => {
+    expect(() => createClickUpTracker({ listId: "list/../x", workspaceId: "w", token: TOKEN })).toThrow(/listId/);
+    expect(() => createClickUpTracker({ listId: "l", workspaceId: "", token: TOKEN })).toThrow(/workspaceId/);
+    expect(() =>
+      createClickUpTracker({ listId: "l", workspaceId: "w", token: TOKEN, apiBaseUrl: "api.clickup.com" }),
+    ).toThrow(/absolute http/);
   });
 });

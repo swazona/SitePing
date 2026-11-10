@@ -7,6 +7,7 @@
  * - `@siteping/integration-issues/linear` — Linear (GraphQL API)
  * - `@siteping/integration-issues/jira` — Jira Cloud (REST API v3)
  * - `@siteping/integration-issues/plane` — Plane (REST API v1, Cloud / self-hosted)
+ * - `@siteping/integration-issues/clickup` — ClickUp (API v2)
  *
  * Each entry but GitLab's also builds a webhook handler syncing issue
  * states back to the feedback (`create…WebhookHandler`).
